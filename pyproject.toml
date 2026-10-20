@@ -1,0 +1,10 @@
+[project]
+name = "bci-tools-launcher"
+version = "0.1.0"
+description = "A small desktop launcher for the team's BCI tools."
+requires-python = ">=3.13.14,<3.14"
+dependencies = []
+
+[tool.uv]
+package = false
+python-preference = "only-managed"

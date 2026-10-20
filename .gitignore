@@ -1,0 +1,21 @@
+# Local environments and Python caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Build output
+build/
+dist/
+*.egg-info/
+
+# Local credentials and desktop metadata
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# Launcher logs and other local state
+/.local/

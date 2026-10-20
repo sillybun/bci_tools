@@ -1,0 +1,7 @@
+name = "集成终端"
+description = "集中管理实验进程，一处查看采集、解码与可视化程序的输出。"
+category = "进程与环境"
+tags = ["Integrated Term", "终端", "进程", "日志", "LSL"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"
+icon = "assets/integrated-term-icon.png"

@@ -1,0 +1,32 @@
+{
+  "root_dir": "~",
+  "groups": [
+    {
+      "name": "无分组",
+      "locked": true,
+      "expanded": true,
+      "processes": []
+    },
+    {
+      "name": "快速体验",
+      "locked": false,
+      "expanded": true,
+      "processes": [
+        {
+          "name": "输出检查",
+          "command": "echo Integrated Term is ready",
+          "enabled": true,
+          "gui_mode": "auto",
+          "lsl_streams": []
+        },
+        {
+          "name": "平台命令示例",
+          "command": "[macos]\necho Running on macOS\n[ubuntu]\necho Running on Ubuntu\n[linux]\necho Running on Linux\n[windows]\necho Running on Windows\n[default]\necho Running on this platform",
+          "enabled": true,
+          "gui_mode": "auto",
+          "lsl_streams": []
+        }
+      ]
+    }
+  ]
+}

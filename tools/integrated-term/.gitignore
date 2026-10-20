@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+/processes.json
+processes.local.json
+*.app/
+build/
+dist/

@@ -9,6 +9,7 @@
 | 工具 | 用途 | 文档 |
 | --- | --- | --- |
 | Integrated Term（集成终端控制台） | 集中启动、停止和分组管理采集、解码、设备桥接及可视化进程，查看终端输出 | [使用说明](tools/integrated-term/README.md) |
+| Mock EMG Data（模拟肌电源） | 鼠标拖动小球，生成 64 通道模拟肌电并通过 LSL 发送 | [使用说明](tools/mock-emg-data/README.md) |
 
 ## 打开工具箱
 
@@ -58,6 +59,7 @@ bci_tools/
 ├── launcher/                 # 发现、展示、启动工具
 ├── tests/                    # 启动台测试
 └── tools/
+    ├── mock-emg-data/         # 鼠标控制的模拟肌电源
     └── integrated-term/
         ├── tool.toml         # 工具介绍、分类与启动命令
         ├── README.md

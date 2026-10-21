@@ -1,0 +1,6 @@
+name = "Mock EMG Data"
+description = "拖动小球生成模拟肌电，通过 LSL 发送 64 通道数据，方便调试采集与解码链路。"
+category = "采集与连接"
+tags = ["EMG", "肌电", "模拟数据", "鼠标", "Mock Mouse EMG", "LSL"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"

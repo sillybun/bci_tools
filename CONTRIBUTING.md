@@ -15,7 +15,7 @@ uv run --locked python -m unittest discover -s tests -v
 
 启动台的测试使用相同命令，在仓库根目录运行。两套测试分别使用各自的项目环境。
 
-修改启动台界面后，在有桌面的机器上执行以下检查。它会打开测试窗口，验证搜索、分类、窄窗口布局，以及通过独立 uv 环境打开集成终端；工具配置和日志使用临时目录。
+修改启动台界面后，在有桌面的机器上执行以下检查。它会打开测试窗口，验证搜索、分类、1/2/4 列固定卡片布局、滚动条自动隐藏、说明/帮助/日志菜单，以及通过独立 uv 环境打开集成终端、退出和失败状态；工具配置和日志使用临时目录。
 
 ```bash
 uv run --locked python tests/ui_smoke.py
@@ -45,7 +45,7 @@ readme = "README.md"
 icon = "assets/integrated-term-icon.png"
 ```
 
-`name`、`description`、`category`、`command`、`readme` 必填；`tags` 和 `icon` 可省略。图标使用 PNG，省略时显示工具名称首字。README 和图标路径相对于该工具目录，且必须指向目录内已有文件。
+`name`、`description`、`category`、`command`、`readme` 必填；`tags` 和 `icon` 可省略。图标使用 PNG，省略时显示分类图标；内置集成终端在启动台使用简洁的终端图形。README 和图标路径相对于该工具目录，且必须指向目录内已有文件。
 
 `command` 为参数数组，启动时以工具目录为工作目录，不经过 shell。Python 工具推荐上面的 uv 命令，以使用各自的项目环境。需要复杂启动步骤时，放进工具自己的启动脚本。启动台会清除自身的 Python 虚拟环境变量及相关 PATH 项；工具仍需明确声明依赖。
 

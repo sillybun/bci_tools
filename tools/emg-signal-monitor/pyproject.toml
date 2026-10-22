@@ -1,0 +1,22 @@
+[project]
+name = "bci-emg-signal-monitor"
+version = "0.1.0"
+description = "Realtime packetized EMG debugging with bipolar display and causal filtering."
+requires-python = ">=3.11.15,<3.12"
+dependencies = [
+    "numpy>=1.24,<3",
+    "scipy>=1.11,<2",
+    "pyside6-essentials>=6.8,<7",
+    "pylsl>=1.18.2,<2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.uv]
+package = false
+python-preference = "only-managed"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

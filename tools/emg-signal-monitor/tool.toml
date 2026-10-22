@@ -1,0 +1,6 @@
+name = "EMG 信号调试"
+description = "实时查看肌电波形、双极差分和在线带通，检查 LSL 分包流的间隙、乱序及连接状态。"
+category = "信号查看"
+tags = ["EMG", "肌电", "实时", "Viewer", "Bipolar", "双极差分", "LSL", "滤波", "调试"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"

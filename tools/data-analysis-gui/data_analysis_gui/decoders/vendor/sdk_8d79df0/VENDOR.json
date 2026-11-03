@@ -1,0 +1,135 @@
+{
+  "repo": "https://github.com/sillybun/bci-decoder-sdk",
+  "commit": "8d79df0475b85ca859a02a8268f5262358a22afa",
+  "pip_spec": "bci-decoder-api @ git+ssh://git@github.com/sillybun/bci-decoder-sdk.git@8d79df0475b85ca859a02a8268f5262358a22afa",
+  "license": "none found in the repository at this commit",
+  "import_rewrites": [
+    {
+      "applies_to": "decoders/**/*.py",
+      "pattern": "^(\\s*)from bci_decoder_api\\b",
+      "replacement": "\\1from ...bci_decoder_api"
+    }
+  ],
+  "note": "Bodies are byte-identical to the originals apart from rewritten import lines; each file starts with a header comment ending with \"--- end vendor header ---\". sdk_*/__init__.py is local glue, not vendored.",
+  "files": [
+    {
+      "path": "bci_decoder_api/__init__.py",
+      "original_path": "src/bci_decoder_api/__init__.py",
+      "original_blob_sha": "5e2682aa92e525e156832e221aa94072ff53a066",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/artifact.py",
+      "original_path": "src/bci_decoder_api/artifact.py",
+      "original_blob_sha": "53f8d01582e279d2bd59ce77b46b403ed73ce040",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/base.py",
+      "original_path": "src/bci_decoder_api/base.py",
+      "original_blob_sha": "adb36938e075e2072ef5b105efd00e07294b0737",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/contracts.py",
+      "original_path": "src/bci_decoder_api/contracts.py",
+      "original_blob_sha": "9e53bec126fc83f48194b40e57d90611b24eb5a4",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/errors.py",
+      "original_path": "src/bci_decoder_api/errors.py",
+      "original_blob_sha": "a1aa10f0edcb84b022e447e489f396d4c83001a2",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/registry.py",
+      "original_path": "src/bci_decoder_api/registry.py",
+      "original_blob_sha": "06cf62a80e7f3db84fc3ee1d577e4c507b9996e5",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/runtime.py",
+      "original_path": "src/bci_decoder_api/runtime.py",
+      "original_blob_sha": "1690c03777fd2ea367226914e1b1bfdc9c63375b",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/schema_catalog.py",
+      "original_path": "src/bci_decoder_api/schema_catalog.py",
+      "original_blob_sha": "34408aadcafad0679a069226bfc0eef930933f49",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/specs.py",
+      "original_path": "src/bci_decoder_api/specs.py",
+      "original_blob_sha": "a0901c420aa4674bd6001ca1d2e972a88c593453",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/__init__.py",
+      "original_path": "src/decoders/__init__.py",
+      "original_blob_sha": "7ae722cee20b334dd158459844722489b8526b83",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/README.md",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/README.md",
+      "original_blob_sha": "931e26050e0f0f9da1beb4fd637ee9993c6be3be",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/__init__.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/__init__.py",
+      "original_blob_sha": "4801f18b7d0163efb76fb43d23c9e6d7475b1e87",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/data_types.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/data_types.py",
+      "original_blob_sha": "ebe265542add43f453862b57b36b413921e07b16",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/example.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/example.py",
+      "original_blob_sha": "11f201e933fec9c6e3143610f97514e04fac1998",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/fitting.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/fitting.py",
+      "original_blob_sha": "a08e4ebd9e44cd99d605ba3ca8cc68a480d90be5",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/runtime.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/runtime.py",
+      "original_blob_sha": "5d5d5120ee4a883709015e1c9c184dc5ae51f8a4",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/ecog_linear_velocity_decoder/trainer.py",
+      "original_path": "src/decoders/ecog_linear_velocity_decoder/trainer.py",
+      "original_blob_sha": "aeed719495a5a5904af26113fbd1a6eb3da9d436",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+name = "数据分析 GUI"
+description = "猕猴 512 通道神经/行为 XDF 单日与跨天分析：trial 筛选、raster/PSTH、通道饱和、丢包、PCA/TDR、ANOVA、方向/速度解码与在线 decoder 对比。"
+category = "数据处理"
+tags = ["XDF", "分析", "解码", "PSTH", "TDR", "Kalman", "CO8", "Grid", "跨天"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"

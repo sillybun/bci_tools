@@ -1,0 +1,198 @@
+{
+  "repo": "https://github.com/sillybun/bci-decoder-sdk",
+  "commit": "b70297c092157a0627fa8d5f97f1694d6043e2bc",
+  "pip_spec": "bci-decoder-api @ git+ssh://git@github.com/sillybun/bci-decoder-sdk.git@b70297c092157a0627fa8d5f97f1694d6043e2bc",
+  "license": "none found in the repository at this commit",
+  "import_rewrites": [
+    {
+      "applies_to": "decoders/**/*.py",
+      "pattern": "^(\\s*)from bci_decoder_api\\b",
+      "replacement": "\\1from ...bci_decoder_api"
+    }
+  ],
+  "note": "Bodies are byte-identical to the originals apart from rewritten import lines; each file starts with a header comment ending with \"--- end vendor header ---\". sdk_*/__init__.py is local glue, not vendored.",
+  "files": [
+    {
+      "path": "bci_decoder_api/__init__.py",
+      "original_path": "src/bci_decoder_api/__init__.py",
+      "original_blob_sha": "6c54631c7f169324c7fc9eb24c017144a6019622",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/artifact.py",
+      "original_path": "src/bci_decoder_api/artifact.py",
+      "original_blob_sha": "53f8d01582e279d2bd59ce77b46b403ed73ce040",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/base.py",
+      "original_path": "src/bci_decoder_api/base.py",
+      "original_blob_sha": "72bd11306c737d0b92c34557e2af8d3a724f2223",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/contracts.py",
+      "original_path": "src/bci_decoder_api/contracts.py",
+      "original_blob_sha": "9e53bec126fc83f48194b40e57d90611b24eb5a4",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/errors.py",
+      "original_path": "src/bci_decoder_api/errors.py",
+      "original_blob_sha": "a1aa10f0edcb84b022e447e489f396d4c83001a2",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/registry.py",
+      "original_path": "src/bci_decoder_api/registry.py",
+      "original_blob_sha": "06cf62a80e7f3db84fc3ee1d577e4c507b9996e5",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/runtime.py",
+      "original_path": "src/bci_decoder_api/runtime.py",
+      "original_blob_sha": "d793a05a49bdafb04f1daabc794e60c0f0192589",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "bci_decoder_api/specs.py",
+      "original_path": "src/bci_decoder_api/specs.py",
+      "original_blob_sha": "635d1a7602e8841caab5cd98b922da4f535445c7",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/__init__.py",
+      "original_path": "src/decoders/__init__.py",
+      "original_blob_sha": "7ae722cee20b334dd158459844722489b8526b83",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/README.md",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/README.md",
+      "original_blob_sha": "6e8c328492e3c6f6993b3b524e31925bbb6f9f7c",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/__init__.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/__init__.py",
+      "original_blob_sha": "6cce6d65298147a195934fa2649fec39dc1eedf2",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/config.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/config.py",
+      "original_blob_sha": "24b69bac3a0f83b4238e113f527e0f51203d3e61",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/data_types.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/data_types.py",
+      "original_blob_sha": "eed3fdb0bb2bad33512cc1d1377fe456c568bd69",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/fitting.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/fitting.py",
+      "original_blob_sha": "8dc43374a3ff3638de24d76b3ee9b6fe3ab09478",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/runtime.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/runtime.py",
+      "original_blob_sha": "e6664b5a0b0cfe063c1e7ea37d7f5542032bdc47",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/trainer.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/trainer.py",
+      "original_blob_sha": "f79c206328d069041ee501ee82efd46313ed440e",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    },
+    {
+      "path": "decoders/madduri_coadaptive_decoder/validation.py",
+      "original_path": "src/decoders/madduri_coadaptive_decoder/validation.py",
+      "original_blob_sha": "b555de186e1b994960711ffbe61628497cc2a56c",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    },
+    {
+      "path": "decoders/standalone_refit_kf/README.md",
+      "original_path": "src/decoders/standalone_refit_kf/README.md",
+      "original_blob_sha": "e7de8618cf0b1a71f4f4c3440869eabebbde4d31",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/__init__.py",
+      "original_path": "src/decoders/standalone_refit_kf/__init__.py",
+      "original_blob_sha": "76f2b18588e16c9f123e37d6ac6dff4cc0a9b3b0",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/config.py",
+      "original_path": "src/decoders/standalone_refit_kf/config.py",
+      "original_blob_sha": "4f768910559f41d190fffd22dfb6f2e19c5c572e",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/data_types.py",
+      "original_path": "src/decoders/standalone_refit_kf/data_types.py",
+      "original_blob_sha": "0b59c3ec38447441c91484da68ffee7f0b16756d",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/fitting.py",
+      "original_path": "src/decoders/standalone_refit_kf/fitting.py",
+      "original_blob_sha": "ae952294003f5d07c2f1e6d545ac32bd25dc3ed5",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/runtime.py",
+      "original_path": "src/decoders/standalone_refit_kf/runtime.py",
+      "original_blob_sha": "808b3ab7988c4c4db6e88dd3f94504bccd61feb4",
+      "eol": "lf",
+      "import_lines_rewritten": 1
+    },
+    {
+      "path": "decoders/standalone_refit_kf/trainer.py",
+      "original_path": "src/decoders/standalone_refit_kf/trainer.py",
+      "original_blob_sha": "3a14a1546172fc77b7803835d8d208654f5c8f8d",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    },
+    {
+      "path": "decoders/standalone_refit_kf/utils.py",
+      "original_path": "src/decoders/standalone_refit_kf/utils.py",
+      "original_blob_sha": "907ad4cda8cd4aec20acb1e11dd58c4d0ce4c1b1",
+      "eol": "lf",
+      "import_lines_rewritten": 0
+    },
+    {
+      "path": "decoders/standalone_refit_kf/validation.py",
+      "original_path": "src/decoders/standalone_refit_kf/validation.py",
+      "original_blob_sha": "c68af0df826412f01c5840f73e1efb9f34e0e420",
+      "eol": "lf",
+      "import_lines_rewritten": 2
+    }
+  ]
+}

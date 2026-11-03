@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/bci-data-analysis-gui.iml" filepath="$PROJECT_DIR$/.idea/bci-data-analysis-gui.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bci-emg-signal-monitor.iml" filepath="$PROJECT_DIR$/.idea/bci-emg-signal-monitor.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bci-mock-emg-data.iml" filepath="$PROJECT_DIR$/.idea/bci-mock-emg-data.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bci-tools-launcher.iml" filepath="$PROJECT_DIR$/.idea/bci-tools-launcher.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/gyp-next.iml" filepath="$PROJECT_DIR$/.idea/gyp-next.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/integrated-term.iml" filepath="$PROJECT_DIR$/.idea/integrated-term.iml" />
+    </modules>
+  </component>
+</project>

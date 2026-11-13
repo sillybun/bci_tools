@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {scheduleChange,dependencyConflicts,validate,linkTasks,DAY} from '../src/model.js';
+const base=Date.UTC(2026,10,2);
+const sample=()=>({categories:[{id:'x',name:'类别',rows:2}],tasks:[{id:'a',title:'前项',categoryId:'x',row:0,start:base,end:base+DAY},{id:'b',title:'后项',categoryId:'x',row:1,start:base+DAY,end:base+2*DAY}],dependencies:[{from:'a',to:'b'}],settings:{showTaskDates:true,fontSize:14}});
+test('默认自由调整不改变其他任务，严格大于才是冲突，刷新不修正时间',()=>{
+ const s=sample(),before=structuredClone(s);
+ assert.equal(dependencyConflicts(s).length,0);
+ s.tasks[0].end+=DAY;
+ scheduleChange(s,before,'a');
+ assert.deepEqual(s.tasks[1],before.tasks[1]);
+ assert.equal(dependencyConflicts(s).length,1);
+ assert.deepEqual(validate(s).tasks,s.tasks);
+ s.tasks[0].end=before.tasks[0].end;
+ s.tasks[1].start-=DAY;
+ scheduleChange(s,before,'b');
+ assert.deepEqual(s.tasks[0],before.tasks[0]);
+ assert.equal(dependencyConflicts(s).length,1);
+});
+test('未锁定建立依赖不改时间，锁定继续联动',()=>{
+ const s=sample();s.dependencies=[];s.tasks[0].end+=DAY;
+ const before=structuredClone(s.tasks);
+ linkTasks(s,'a','b');
+ assert.deepEqual(s.tasks,before);
+ s.settings.lockDependencies=true;
+ const locked=validate(s);
+ assert.equal(locked.tasks[1].start,locked.tasks[0].end);
+ const snapshot=structuredClone(locked);
+ locked.tasks[0].end+=DAY;
+ scheduleChange(locked,snapshot,'a');
+ assert.equal(locked.tasks[1].start,locked.tasks[0].end);
+ assert.equal(dependencyConflicts(locked).length,0);
+ s.settings.lockDependencies='yes';
+ assert.throws(()=>validate(s),/显示设置无效/);
+});

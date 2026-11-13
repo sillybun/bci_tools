@@ -1,0 +1,8 @@
+name = "LSL 信号检测器"
+description = "发现 LSL 流并查看元数据与信号。"
+category = "采集与连接"
+command = ["uv","run","--locked","lsl-viewer"]
+readme = "README.md"
+
+[bci_tools]
+target = "tools/lsl-viewer"

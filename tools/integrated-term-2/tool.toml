@@ -1,0 +1,9 @@
+name = "集成终端 2"
+description = "新版集成终端：集中启动实验进程、工作流与日志。"
+category = "进程与环境"
+tags = ["终端", "进程", "工作流", "LSL"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"
+
+[bci_tools]
+target = "tools/integrated-term-2"

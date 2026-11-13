@@ -1,0 +1,10 @@
+name = "时间轴甘特图绘制工具"
+description = "编排任务与依赖，绘制时间轴并导出项目和图片。"
+category = "项目规划"
+tags = ["Gantt", "甘特图", "时间轴"]
+command = ["uv", "run", "--locked", "python", "app.py"]
+readme = "README.md"
+icon = "build/icon.png"
+
+[bci_tools]
+target = "tools/gantt-studio"

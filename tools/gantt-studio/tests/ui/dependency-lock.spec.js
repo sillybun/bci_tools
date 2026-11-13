@@ -1,0 +1,26 @@
+import {test,expect} from '@playwright/test';
+test('自由拖动冲突红光、刷新、锁定修正及撤销',async({page})=>{
+ const base=Date.UTC(2026,10,2),week=7*86400000;
+ await page.addInitScript(({base,week})=>localStorage.setItem('gantt-studio-v1',JSON.stringify({categories:[{id:'x',name:'类别',rows:2}],tasks:[{id:'a',title:'前项',categoryId:'x',row:0,start:base,end:base+week},{id:'b',title:'后项',categoryId:'x',row:1,start:base+week,end:base+2*week}],dependencies:[{from:'a',to:'b'}]})),{base,week});
+ await page.goto('/');
+ await expect(page.locator('#lockDependencies')).not.toBeChecked();
+ const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('gantt-studio-v1')));
+ const before=await read();
+ const r=await page.locator('[data-task="a"]').boundingBox();
+ await page.mouse.move(r.x+30,r.y+20);await page.mouse.down();
+ await page.mouse.move(r.x+142,r.y+20,{steps:10});
+ await expect(page.locator('[data-task="a"]')).toHaveClass(/dependency-conflict/);
+ await expect(page.locator('.dependency-line.dependency-conflict')).toHaveCount(1);
+ await page.mouse.up();
+ const after=await read();
+ expect(after.tasks[1]).toEqual(before.tasks[1]);
+ await page.reload();
+ await expect(page.locator('.dependency-line.dependency-conflict')).toHaveCount(1);
+ await page.locator('#lockDependencies').check();
+ await expect(page.locator('.dependency-line.dependency-conflict')).toHaveCount(0);
+ expect((await read()).tasks[1].start).toBe(after.tasks[0].end);
+ await page.locator('#undo').click();
+ await expect(page.locator('#lockDependencies')).not.toBeChecked();
+ await expect(page.locator('.dependency-line.dependency-conflict')).toHaveCount(1);
+ expect((await read()).tasks).toEqual(after.tasks);
+});

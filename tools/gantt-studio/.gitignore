@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+test-results/
+playwright-report/
+*.log
+
+.venv/
+
+__pycache__/
+
+*.py[cod]
+
+.cache/
+
+.codex/
+.DS_Store

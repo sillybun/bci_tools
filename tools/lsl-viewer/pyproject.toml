@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lsl-viewer"
+version = "1.0.0"
+description = "Desktop browser for Lab Streaming Layer signals"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = ["pylsl>=1.16,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
+
+[project.scripts]
+lsl-viewer = "lsl_viewer.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lsl_viewer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

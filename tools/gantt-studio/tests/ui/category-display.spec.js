@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+for(const compact of [false,true]) test('类别颜色与图片可见性、撤销重做及保存 compact='+compact,async({page})=>{
+ await page.goto('/');if(compact)await page.locator('#compactMode').check();
+ const color=page.locator('[data-color="design"]');
+ await color.click();await page.locator('[data-custom-color="design"]').fill('#dd5522');await page.locator('[data-custom-color="design"]').dispatchEvent('change');
+ await expect(page.locator('[data-task="a"]')).toHaveCSS('color','rgb(221, 85, 34)');
+ await page.locator('#undo').click();await expect(color).toHaveCSS('background-color','rgb(105, 97, 217)');
+ await page.locator('#redo').click();await expect(color).toHaveCSS('background-color','rgb(221, 85, 34)');
+ const eye=page.locator('[data-visibility="design"]');
+ const height=await page.locator('.category[data-category="design"]').evaluate(e=>e.getBoundingClientRect().height);
+ await eye.click();await expect(eye).toHaveAttribute('aria-pressed','false');
+ await expect(page.locator('.category[data-category="design"]')).toHaveCSS('opacity','0.4');
+ expect(await page.locator('.category[data-category="design"]').evaluate(e=>e.getBoundingClientRect().height)).toBe(height);
+ const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('gantt-studio-v1')));
+ expect((await read()).tasks.some(t=>t.id==='a')).toBe(true);
+ const svg=await page.evaluate(async()=>{const {projectSVG}=await import('/src/export.js');return projectSVG(JSON.parse(localStorage.getItem('gantt-studio-v1'))).svg;});
+ expect(svg).not.toContain('需求调研与分析');expect(svg).not.toContain('产品与设计');
+ await page.locator('#undo').click();await expect(eye).toHaveAttribute('aria-pressed','true');
+ await page.locator('#redo').click();await page.reload();
+ await expect(eye).toHaveAttribute('aria-pressed','false');await expect(color).toHaveCSS('background-color','rgb(221, 85, 34)');
+ await eye.click();await expect(page.locator('.category[data-category="design"]')).toHaveCSS('opacity','1');
+});

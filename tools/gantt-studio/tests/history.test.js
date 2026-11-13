@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { ProjectHistory } from "../src/history.js";
+test("撤销重做、分支失效、项目隔离和历史上限", () => {
+  const h = new ProjectHistory(2);
+  h.record("a", { n: 0 });
+  h.record("a", { n: 1 });
+  h.record("a", { n: 2 });
+  h.record("a", { n: 3 });
+  assert.deepEqual(h.undo("a"), { n: 2 });
+  assert.deepEqual(h.undo("a"), { n: 1 });
+  assert.equal(h.undo("a"), null);
+  assert.deepEqual(h.redo("a"), { n: 2 });
+  h.record("a", { n: 4 });
+  assert.equal(h.redo("a"), null);
+  h.record("b", { n: 10 });
+  assert.equal(h.undo("b"), null);
+  assert.deepEqual(h.undo("a"), { n: 2 });
+});
+test("无变化不新增记录，返回快照与内部历史隔离", () => {
+  const h = new ProjectHistory();
+  h.record("a", { n: 0 });
+  h.record("a", { n: 0 });
+  assert.equal(h.undo("a"), null);
+  h.record("a", { n: 1 });
+  const value = h.undo("a");
+  value.n = 100;
+  assert.deepEqual(h.redo("a"), { n: 1 });
+  assert.deepEqual(h.undo("a"), { n: 0 });
+});

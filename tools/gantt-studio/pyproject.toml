@@ -1,0 +1,9 @@
+[project]
+name = "gantt-studio-launcher"
+version = "1.3.0"
+description = "uv entry point for the Gantt Studio Electron desktop app"
+requires-python = ">=3.11,<3.14"
+dependencies = []
+
+[tool.uv]
+package = false

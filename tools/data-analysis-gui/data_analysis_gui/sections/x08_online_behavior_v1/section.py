@@ -69,6 +69,7 @@ class CrossOnlineBehavior(Section):
                 if mode == 'centerout':
                     run_rows = [dict(co8_runs[key], **behavior.metrics(trials, mode))
                                 for key, trials in co8_trials.items()]
+                    for row in run_rows:row.pop('bps', None)
                     for row, label in zip(run_rows, recording_labels(co8_recordings.values())):
                         row['session'] = label
                     result.add_figure(run_behavior.TITLE, run_behavior.run_figure(run_rows),

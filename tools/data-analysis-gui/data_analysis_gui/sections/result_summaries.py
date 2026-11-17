@@ -109,6 +109,9 @@ def result_sentence(section_id, summary):
         text = (f'当前 run 全量拟合使用 {n("n_bins")} 个 bin、{n("n_fitted")} 个非常数通道，'
                 f'平均 norm 权重最高的位置组为 Elec# {n("peak_elec_start")}–{n("peak_elec_end")}；'
                 '权重表示模型敏感度，不能直接解释为独立解码贡献')
+    elif section_id == 's15':
+        text = (f'任务回放包含 {n("samples")} 帧 cursor、{n("trials")} 个 trial 起点，'
+                f'时长 {f("duration_s")} s，{n("gaps")} 处采样缺口；可在任务回放页以 1× 实时播放')
     elif section_id == 'x09':
         text = (f'对所选 {n("n_recordings")} 份录制逐通道等权计算 median 和 average，'
                 f'{n("n_channels_observed")} 个通道至少一次传输，{n("n_channels_all_runs")} 个通道全部录制均传输；缺失不补零')

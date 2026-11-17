@@ -64,6 +64,8 @@ def export_result(folder, record, recordings, batch):
                 copy(relative, destination / filename(relative, destination))
         for relative in record.get('tables', {}).values():
             copy(relative, base / '_tables' / run_name / Path(relative).name)
+        for relative in record.get('attachments', {}).values():
+            copy(relative, base / '_attachments' / run_name / Path(relative).name)
         provenance = base / '_sources' / f'{run_name}.json'
         staged_manifest = work / provenance.relative_to(root)
         staged_manifest.parent.mkdir(parents=True, exist_ok=True)

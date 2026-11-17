@@ -11,22 +11,19 @@ from ..base import new_figure
 from . import co8_bps
 
 WINDOW_SECONDS = 60.0
+STEP_SECONDS = 1.0
 METHOD = (
-    'Trailing 60 seconds of accumulated active attempt time, updated at each completed trial. '
-    'ITI, block breaks and post-outcome feedback are removed from the time axis; selection dwell '
-    'and failed/timeout attempt time remain. The initial incomplete window is not calculated. '
-    'Windows never cross sessions/recording fragments or gaps in trial identity/verified timing. '
-    'The left boundary may cut an attempt: only its overlapping duration enters T, while selection '
-    'outcomes are counted at completion in (window start, window end]. T is exactly 60 active seconds. '
-    'Grid BPS = correct selections × log2(N) / 60. CO8 Neuralink-style and Wolpaw formulas use the '
-    'same completion outcomes and T=60. Fitts retains its distinct formula: successful-trial difficulty '
-    'over outbound movement time, using only trials fully contained in the same 60-second window '
-    '(a boundary-crossing trial is omitted from Fitts because its outbound subinterval is unverified). '
-    'Per-run median/IQR and peak summarize these full windows; peak includes its active-time and trial '
-    'bounds. Overlapping windows are descriptive, not independent samples; IQR is not a confidence interval. '
-    'The Grid TTT panel includes an ideal 6 bits/s reference: mean attempt time = log2(N)/6 seconds '
-    'at 100% success, without failed-attempt time. This is a mean-time budget, not a bound on the '
-    'displayed successful-trial median TTT.'
+    'Trailing 60 seconds of accumulated active attempt time, step 1 second. '
+    'ITI, block breaks and feedback excluded; dwell, failed attempts and unfinished attempt time included. '
+    'Long runs start at 60s with a strict 1s grid. Only an entire verified run shorter than 60s uses one window at its endpoint: ratio=T/60; BPS=bits/(60*ratio). '
+    'Windows never cross sessions/fragments or invalid timing/trial-identity gaps. '
+    'Only outcomes completed in (window start, window end] count; future outcomes are never used. '
+    'Grid BPS=correct selections*log2(N)/T. CO8 Neuralink/Wolpaw use the same window and T. '
+    'Fitts retains successful difficulty/outbound movement time over fully contained trials only. '
+    'Run median/IQR and peak use these windows, including ratio-normalized partial windows. '
+    'Overlapping windows are descriptive; IQR is not a confidence interval. '
+    'TTT pools successful trials once, independently of overlapping BPS windows. '
+    'Grid 6 bits/s reference=log2(N)/6 seconds at 100% success, a mean-time budget.'
 )
 
 
@@ -43,50 +40,74 @@ def run_key(recording):
 
 
 def windows(trials, mode, *, session='', date='', run=''):
+    """Trailing active-time windows on a strict 1s grid; short runs use bits/T.
+
+    Outcomes contribute only when completed in (left, right]. In-progress attempt
+    time contributes to T, never its future outcome. Partial coverage uses bits/T.
+    """
     ordered = sorted(trials, key=lambda r: r.get('trial', 0))
     known = {'acquired', 'timeout', 'miss', 'incorrect', 'wrong_target'}
-    rows, segment = [], []
-    active_elapsed, segment_id, previous = 0.0, 0, None
+    segments, segment = [], []
+    active_elapsed, previous = 0.0, None
     for position, original in enumerate(ordered, 1):
         index = original.get('trial', position)
         duration = original.get('duration_s', math.nan)
-        if (original['outcome'] not in known or not math.isfinite(duration) or duration <= 0):
+        valid = original['outcome'] in known and math.isfinite(duration) and duration > 0
+        if not valid or (previous is not None and index != previous + 1):
+            if segment:segments.append(segment)
             segment, previous = [], None
-            segment_id += 1
-            continue
-        if previous is not None and index != previous + 1:
-            segment = []
-            segment_id += 1
-        start = active_elapsed
+        if not valid:continue
+        left = active_elapsed
         active_elapsed += duration
-        segment.append((dict(original), start, active_elapsed, index))
+        segment.append((dict(original), left, active_elapsed, index))
         previous = index
-        if active_elapsed - segment[0][1] < WINDOW_SECONDS - 1e-9:
-            continue
-        cut = active_elapsed - WINDOW_SECONDS
-        while segment and segment[0][2] <= cut + 1e-9:
-            segment.pop(0)
-        group, fully_contained = [], []
-        for original_row, left, right, trial_index in segment:
-            overlap = right - max(left, cut)
-            group.append(dict(original_row, duration_s=overlap))
-            if left >= cut - 1e-9:
-                fully_contained.append(original_row)
-        assert math.isclose(math.fsum(r['duration_s'] for r in group), WINDOW_SECONDS, abs_tol=1e-7)
-        values = behavior.metrics(group, mode)
-        if mode == 'centerout':
-            fitts = behavior.metrics(fully_contained, mode)['bps']
-            values.update(co8_bps.co8_metrics(group, fitts))
+    if segment:segments.append(segment)
+    rows = []
+    short_run = len(segments) == 1 and len(segments[0]) == len(ordered) and active_elapsed < WINDOW_SECONDS-1e-9
+    for segment_id, segment in enumerate(segments):
+        origin, stop = segment[0][1], segment[-1][2]
+        length = stop-origin
+        if length < WINDOW_SECONDS-1e-9:
+            if not short_run:continue
+            ends = [length]
         else:
-            values.update(co8_bps.grid_metrics(group))
-        values['active_attempt_seconds'] = WINDOW_SECONDS
-        rows.append(dict(session=session, date=date, run_key=run or session,
-                         trial_start=segment[0][3], trial_end=index, window_trials=len(group),
-                         window_seconds=WINDOW_SECONDS, window_start_active_s=cut,
-                         window_end_active_s=active_elapsed, segment_id=segment_id,
-                         partial_first_trial=segment[0][1] < cut - 1e-9,
-                         fitts_fully_contained_trials=len(fully_contained),
-                         valid_active_time=True, invalid_reason='', **values))
+            ends = np.arange(WINDOW_SECONDS, length+1e-9, STEP_SECONDS)
+        starts = np.array([r[1] for r in segment]);stops = np.array([r[2] for r in segment])
+        for relative_end in ends:
+            right = origin+relative_end;cut = max(origin, right-WINDOW_SECONDS);seconds = right-cut
+            a = int(np.searchsorted(stops, cut+1e-9, side='right'))
+            b = int(np.searchsorted(starts, right-1e-9, side='left'))
+            overlapping = segment[a:b]
+            completed = [dict(r, duration_s=end-max(left,cut)) for r,left,end,index in overlapping if end <= right+1e-9]
+            fully_contained = [r for r,left,end,index in overlapping if left >= cut-1e-9 and end <= right+1e-9]
+            values = behavior.metrics(completed, mode)
+            if mode == 'centerout':
+                fitts = behavior.metrics(fully_contained, mode)['bps']
+                selection = co8_bps.co8_metrics(completed, fitts)
+            else:
+                selection = co8_bps.grid_metrics(completed)
+            completed_seconds = selection['active_attempt_seconds']
+            for key in ('neuralink_bps','wolpaw_bps'):
+                selection[key] = selection[key]*completed_seconds/seconds if completed else 0.
+            selection['active_attempt_seconds'] = seconds
+            values.update(selection)
+            if mode == 'grid':
+                bits = {r['bits'] for r,_,_,_ in overlapping}
+                verified = len(bits)==1 and all(math.isfinite(x) for x in bits)
+                bit = next(iter(bits)) if verified else math.nan
+                values['grid_cells'] = round(2**bit) if verified else None
+                values['bps'] = sum(r['outcome']=='acquired' for r in completed)*bit/seconds
+            else:values['bps'] = values['fitts_bps']
+            rows.append(dict(session=session, date=date, run_key=run or session,
+                trial_start=overlapping[0][3], trial_end=overlapping[-1][3], window_trials=len(completed),
+                window_attempts=len(overlapping),window_seconds=WINDOW_SECONDS,step_seconds=STEP_SECONDS,
+                effective_window_seconds=seconds,window_ratio=seconds/WINDOW_SECONDS,
+                partial_window=seconds<WINDOW_SECONDS-1e-9,
+                terminal_fractional_step=not math.isclose(relative_end,round(relative_end),abs_tol=1e-9),
+                window_start_active_s=cut,window_end_active_s=right,segment_id=segment_id,
+                partial_first_trial=overlapping[0][1]<cut-1e-9,
+                partial_last_trial=overlapping[-1][2]>right+1e-9,
+                fitts_fully_contained_trials=len(fully_contained),valid_active_time=True,invalid_reason='',**values))
     return rows
 
 
@@ -162,13 +183,13 @@ def rolling_figure(rows, mode, title):
                         ha='right' if peak['window_end_active_s'] / 60 > np.median(x) else 'left', fontsize=8)
             ax.margins(y=.25)
         else:
-            ax.text(.5, .5, 'N/A · less than 60 verified active seconds or required inputs unavailable',
+            ax.text(.5, .5, 'N/A · no verified active time or required inputs unavailable',
                     transform=ax.transAxes, ha='center', fontsize=8)
         ax.set(title=label, ylabel='bits/s')
         ax.grid(axis='y', alpha=.23)
     axes[-1].set_xlabel('Accumulated active attempt time (min; 60 s trailing window)')
     fig.suptitle(title)
-    fig.supxlabel('60 active seconds/window · update at each trial completion · star = session peak', fontsize=8)
+    fig.supxlabel('60s window · 1s step · partial windows: bits / actual seconds · star = session peak', fontsize=8)
     return fig
 
 
@@ -217,7 +238,7 @@ def grid_run_figure(rows):
     axes[0].tick_params(axis='x', labelbottom=False)
     axes[-1].set_xlabel('Run')
     fig.suptitle('Online Grid · BPS and Time to Target by Run', fontsize=11)
-    fig.supxlabel('BPS: 60 active seconds · TTT: successful trials · Green reference: mean TTT = log₂(N)/6 at 100% success', fontsize=7)
+    fig.supxlabel('BPS: 60s window / 1s step; partial windows ratio-normalized · TTT: successful trials · Green reference: mean TTT = log₂(N)/6 at 100% success', fontsize=7)
     return title, fig
 
 
@@ -264,7 +285,7 @@ def run_figure(rows, mode, *, peak=False):
     recording_ticks(axes[-1], x, [r['run'] for r in rows], fontsize=8)
     axes[-1].set_xlabel('Run')
     fig.suptitle(title)
-    fig.supxlabel('Within-run distribution of 60-active-second rolling windows · ITI and feedback excluded', fontsize=8)
+    fig.supxlabel('60s window · 1s step · partial windows normalized by actual coverage · ITI and feedback excluded', fontsize=8)
     if combined:
         fig.supxlabel('BPS = C × log₂(N) / T · C = correct selections · T = 60 active attempt seconds, including timeouts; ITI excluded', fontsize=8)
     return title, fig

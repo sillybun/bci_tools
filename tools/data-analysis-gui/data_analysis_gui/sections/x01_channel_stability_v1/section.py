@@ -145,8 +145,8 @@ class ChannelStability(Section):
         Param('silent_threshold', '静默阈值 / Hz', 'float', 0.5, minimum=0.0),
         Param('rate_threshold', '活跃判定：平均发放率 ≥ / Hz', 'float', 1.0, minimum=0.0),
         Param('map_quantity', '布局图显示量', 'choice', 'max_code', choices=('max_code', 'saturation', 'mean_rate')),
-        Param('map_layout', '布局图排列', 'choice', 'default', choices=('default', 'physical'),
-              help='default：8 列 × 128 行电极 ID 网格；physical：使用已加载的真实布局工作簿。'),
+        Param('map_layout', '布局图排列', 'choice', 'both', choices=('both', 'default', 'physical'),
+              help='both：同时输出两版；default：8 列 × 128 行电极 ID 网格；physical：使用已加载的真实布局工作簿。'),
     )
 
     def resolve_params(self, raw=None):
@@ -348,35 +348,36 @@ class ChannelStability(Section):
                                       rate_x_hz=float(mats['rate'][i, e]), rate_y_hz=float(mats['rate'][j, e]),
                                       max3_either=bool(mats['max'][i, e] == 3 or mats['max'][j, e] == 3))
                                  for i, j in pairs for e in np.flatnonzero(observed[i] & observed[j])]})
-        map_layout = ctx.layout if p['map_layout'] == 'physical' else None
-        if p['map_layout'] == 'physical' and map_layout is None:
-            result.notes.append('未加载可用的真实布局工作簿，布局图使用默认电极 ID 网格。')
-        where = 'physical workbook layout (selected ChannelMap xlsx)' if map_layout is not None else \
-            '8-column × 128-row electrode-id grid (ids 1–128 in column 1)'
-        map_rows = []
-        mv = self._map_values(mats, p['map_quantity'])
-        for i in range(n):
-            for e in range(C.N_ELECTRODES):
-                row = dict(recording=labels[i], electrode_id=e + 1,
-                           value=float(mv[i, e]) if observed[i, e] else '')
-                if map_layout is not None:
-                    r, c = map_layout['position'][e]
-                    row.update(layout_row=int(r) + 1, layout_column=chr(65 + int(c)))
-                else:
-                    row.update(grid_row=e % 128 + 1, grid_column=e // 128 + 1)
-                map_rows.append(row)
-        configs = config_changes(sessions)
-        result.add_figure(
-            'Electrode Maps by Session', self.maps(map_layout, mats, labels, p, configs),
-            method=base + f' One map per recording on the {where}; quantity = {p["map_quantity"]} '
-                          '(max_code: discrete 0..3; saturation: log scale floored at 1e-5; mean_rate: '
-                          'log(1 + Hz), colour range 0..99th percentile). Grey = not transmitted. '
-                          'A solid green arrow marks the initial matched configuration or a verified change '
-                          'in channel tiers from the previous matched session. A hollow green arrow marks '
-                          'the first unmatched session on a date with '
-                          'a directory config. Configs are matched to the recorded electrode column order.',
-            data={'map_values': map_rows, 'config_changes': configs})
-        # Keep the spatial view next to the activity overview, before the flattened matrices.
+        for layout_kind in (('default', 'physical') if p['map_layout'] == 'both' else (p['map_layout'],)):
+            map_layout = ctx.layout if layout_kind == 'physical' else None
+            if layout_kind == 'physical' and map_layout is None:
+                result.notes.append('未加载可用的真实布局工作簿，布局图使用默认电极 ID 网格。')
+            where = 'physical workbook layout (selected ChannelMap xlsx)' if map_layout is not None else \
+                '8-column × 128-row electrode-id grid (row positions 0–127)'
+            map_rows = []
+            mv = self._map_values(mats, p['map_quantity'])
+            for i in range(n):
+                for e in range(C.N_ELECTRODES):
+                    row = dict(recording=labels[i], electrode_id=e + 1,
+                               value=float(mv[i, e]) if observed[i, e] else '')
+                    if map_layout is not None:
+                        r, c = map_layout['position'][e]
+                        row.update(layout_row=int(r), layout_column=chr(65 + int(c)))
+                    else:
+                        row.update(grid_row=e % 128, grid_column=e // 128 + 1)
+                    map_rows.append(row)
+            configs = config_changes(sessions)
+            result.add_figure(
+                f'Electrode Maps by Session - {layout_kind}', self.maps(map_layout, mats, labels, p, configs),
+                method=base + f' One map per recording on the {where}; quantity = {p["map_quantity"]} '
+                              '(max_code: discrete 0..3; saturation: log scale floored at 1e-5; mean_rate: '
+                              'log(1 + Hz), colour range 0..99th percentile). Grey = not transmitted. '
+                              'A solid green arrow marks the initial matched configuration or a verified change '
+                              'in channel tiers from the previous matched session. A hollow green arrow marks '
+                              'the first unmatched session on a date with '
+                              'a directory config. Configs are matched to the recorded electrode column order.',
+                data={'map_values': map_rows, 'config_changes': configs})
+            # Keep the spatial view next to the activity overview, before the flattened matrices.
         for entries in (result.figures, result.methods, result.figure_data):
             entries.insert(1, entries.pop())
         result.tables['per_recording'] = day_rows
@@ -394,6 +395,8 @@ class ChannelStability(Section):
             silent_threshold_hz=p['silent_threshold'])
         result.notes.append('方向调谐图使用筛选后的 trial，其余统计使用每份记录的全部接收帧。未传输电极记为缺失。'
                             '电极 ID 稳定只表示同一触点的信号统计相似，不证明是同一神经元。')
+        from .chip_layout import append_chip_layout
+        append_chip_layout(result)
         return result
 
     # ------------------------------------------------------------------ helpers
@@ -731,7 +734,7 @@ class ChannelStability(Section):
         for k in range(n):
             ax = fig.add_subplot(grid[0, k])
             image = draw_channel_map(ax, ids, values[k], layout=layout, cmap=cmap, norm=norm,
-                                     colorbar=False, show_labels=False)
+                                     colorbar=False, show_labels=(k == 0))
             ax.text(.5, -.015, X.recording_label_lines(labels[k]), transform=ax.transAxes, fontsize=7.5,
                     rotation=45, rotation_mode='anchor', ha='right', va='top', fontstyle='normal',
                     color=X.session_label_color(labels[k]))

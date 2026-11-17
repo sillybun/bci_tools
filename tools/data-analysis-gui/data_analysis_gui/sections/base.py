@@ -101,6 +101,8 @@ class SectionResult:
     # data behind each panel. Exported next to the PNG/SVG/PDF as CSV.
     methods: list[str] = field(default_factory=list)
     figure_data: list[dict[str, Any]] = field(default_factory=list)
+    # Standalone interactive results, stored and hashed alongside static figures.
+    attachments: dict[str, str] = field(default_factory=dict)
 
     def add_figure(self, title: str, fig: Figure, method: str = '', data: dict | None = None):
         """Register a figure.

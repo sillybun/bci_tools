@@ -48,6 +48,7 @@ def _read_layout(path: str, mtime: float) -> dict:
     if [raw_cells.get(f'{col}1') for col in 'ABC'] == ['Channel#', 'Shank', 'Elec#']:
         position = np.full((C.N_ELECTRODES, 2), -1, int)
         seen = set()
+        records = []
         for row in range(2, C.N_ELECTRODES + 2):
             try:
                 numbers = [float(raw_cells[f'{col}{row}']) for col in 'ABC']
@@ -56,16 +57,37 @@ def _read_layout(path: str, mtime: float) -> dict:
                 channel, shank, electrode = map(int, numbers)
             except (KeyError, ValueError, OverflowError) as exc:
                 raise ValueError(f'布局表第 {row} 行需包含整数 Channel#、Shank、Elec#') from exc
-            if not (0 <= channel < C.N_ELECTRODES and 1 <= shank <= 8 and 1 <= electrode <= 128):
+            records.append((row, channel, shank, electrode))
+        electrode_numbers = {record[3] for record in records}
+        if electrode_numbers == set(range(128)):
+            electrode_base = 0
+        elif electrode_numbers == set(range(1, 129)):
+            electrode_base = 1
+        else:
+            raise ValueError('布局 Elec# 需完整采用 0–127 或 1–128 编号')
+        for row, channel, shank, electrode in records:
+            if not (0 <= channel < C.N_ELECTRODES and 1 <= shank <= 8):
                 raise ValueError(f'布局表第 {row} 行通道或 shank / Elec# 越界')
             if position[channel, 0] >= 0 or (electrode, shank) in seen:
                 raise ValueError(f'布局表第 {row} 行通道或位置重复')
-            position[channel] = (electrode - 1, shank - 1)
+            position[channel] = (electrode - electrode_base, shank - 1)
             seen.add((electrode, shank))
         if len(seen) != C.N_ELECTRODES:
             raise ValueError('布局文件需覆盖 1024 个通道和 shank 位点')
-        return dict(source=path, rows=128, columns=8, position=position, kind='shank_table',
-                    row_label='Elec# (1 near fan-in; 128 tip)', column_label='Shank', index_base=0)
+        bga = None
+        if raw_cells.get('D1') == 'BGA Row' and raw_cells.get('E1') == 'BGA Col':
+            bga = np.full((C.N_ELECTRODES, 2), -1, int)
+            for row, channel, _, _ in records:
+                values = [float(raw_cells[f'{col}{row}']) for col in 'DE']
+                if any(v != int(v) for v in values):
+                    raise ValueError(f'布局表第 {row} 行 BGA 坐标需为整数')
+                bga[channel] = values
+            if (not ((bga[:,0]>=1)&(bga[:,0]<=30)&(bga[:,1]>=1)&(bga[:,1]<=38)).all()
+                    or len(set(map(tuple,bga))) != C.N_ELECTRODES):
+                raise ValueError('BGA 坐标需覆盖 1024 个唯一位点，行1–30、列1–38')
+        return dict(source=path, rows=128, columns=8, position=position, kind='shank_table', bga_position=bga,
+                    row_label='Elec# (0 near fan-in; 127 tip)', column_label='Shank', index_base=0,
+                    electrode_index_base=electrode_base)
     cells = []
     for cell in root.findall('.//m:sheetData/m:row/m:c', NS):
         value = cell.find('m:v', NS)
@@ -111,7 +133,7 @@ def id_grid(electrode_ids, values, total=C.N_ELECTRODES, n_cols=8) -> np.ndarray
 
 
 def layout_grid(layout, electrode_ids, values) -> np.ndarray:
-    """Rows indexed by position 1–128; plots place row 1 at the bottom."""
+    """Rows indexed by position 0–127; plots place row 0 at the bottom."""
     grid = np.full((layout['rows'], layout['columns']), np.nan)
     pos = layout['position'][np.asarray(electrode_ids) - 1]
     grid[pos[:, 0], pos[:, 1]] = values
@@ -141,11 +163,11 @@ def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', 
         ylabel = 'Row'
     image = ax.imshow(np.ma.masked_invalid(grid), aspect='equal', cmap=cmap, norm=norm,
                       interpolation='nearest', origin='lower')
-    ticks = np.r_[0, np.arange(15, grid.shape[0], 16)]
+    ticks = np.unique(np.r_[np.arange(0, grid.shape[0], 16), grid.shape[0]-1])
     ax.set_xticks([])
     ax.spines['bottom'].set_visible(False)
     if show_labels:
-        ax.set_yticks(ticks, ticks + 1, fontsize=7)
+        ax.set_yticks(ticks, ticks, fontsize=7)
         ax.set_ylabel(ylabel, fontsize=8)
     else:
         ax.set_yticks([])
@@ -164,6 +186,7 @@ def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', 
         cb.ax.tick_params(labelsize=6)
         if cbar_label:
             cb.set_label(cbar_label, fontsize=7)
+    ax.set_ylim(0, grid.shape[0]-1)
     return image
 
 

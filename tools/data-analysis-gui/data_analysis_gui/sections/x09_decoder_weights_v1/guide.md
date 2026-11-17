@@ -2,7 +2,7 @@
 
 **一句话总结：**沿用单记录 S14/S10 设置，对所选录制独立拟合，再逐通道等权计算 |wx|、|wy|、norm 的 median 和 average，共六张图。
 
-下方为 Elec# 1，上方为 128；Shank 从左到右为 1–8。所有图使用 hot_r 和六图统一的自动范围 色条，高值深色，零权重白色，未观测通道灰色。没有 position groups 副图。
+下方为 Elec# 0，上方为 127；Shank 从左到右为 1–8。所有图使用 hot_r 和六图统一的自动范围 色条，高值深色，零权重白色，未观测通道灰色。没有 position groups 副图。
 
 ## 图 1：vx weighting median
 

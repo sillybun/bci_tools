@@ -70,7 +70,7 @@ def channel_rows(layout, ids, weights, keep):
         j = lookup.get(e)
         vx, vy = weights[j] if j is not None else (np.nan, np.nan)
         rows.append(dict(channel_0based=index, electrode_id=e, stored_column_0based=j,
-                         shank=int(c + 1), elec_index=int(r + 1), transmitted=j is not None,
+                         shank=int(c + 1), elec_index=int(r), transmitted=j is not None,
                          status='untransmitted' if j is None else 'fitted' if keep[j] else 'constant_dropped',
                          vx_signed=float(vx), vy_signed=float(vy),
                          vx=float(abs(vx)), vy=float(abs(vy)), norm=float(np.hypot(vx, vy))))
@@ -80,8 +80,8 @@ def channel_rows(layout, ids, weights, keep):
 def depth_rows(rows, size):
     total = sum(row['norm'] for row in rows if row['transmitted'])
     result = []
-    for start in range(1, 129, size):
-        end = min(start + size - 1, 128)
+    for start in range(0, 128, size):
+        end = min(start + size - 1, 127)
         sites = [r for r in rows if start <= r['elec_index'] <= end]
         selected = [r for r in sites if r['transmitted']]
         row = dict(elec_start=start, elec_end=end, elec_mid=(start + end) / 2,
@@ -124,10 +124,10 @@ def weight_figure(layout, ids, values, component, numeric, banner, unit, *, colo
     ax.set_xticks(range(8), [str(i) for i in range(1, 9)])
     ax.xaxis.tick_bottom();ax.xaxis.set_label_position('bottom')
     ax.set_xlabel('Shank', fontsize=7)
-    ticks = np.r_[0, np.arange(15, 128, 16)]
-    ax.set_yticks(ticks, ticks + 1)
-    ax.set_ylim(-.5, 127.5)
-    ax.set_ylabel('Elec# (1 near fan-in; 128 tip)', fontsize=7)
+    ticks = np.r_[np.arange(0, 128, 16), 127]
+    ax.set_yticks(ticks, ticks)
+    ax.set_ylim(0, 127)
+    ax.set_ylabel('Elec# (0 near fan-in; 127 tip)', fontsize=7)
     ax.tick_params(length=0, labelsize=6)
     label = '|wx|' if component == 'vx' else '|wy|' if component == 'vy' else 'norm(wx, wy)'
     fig.suptitle(f'{label} weighting - {"values" if numeric else "heatmap"}\n{banner}',
@@ -175,8 +175,18 @@ class DecoderWeights(Section):
         source = ctx.params['_source_sections']['s10']
         p = source['params']
         spec = spec_of(p)
+        def not_estimable(reason):
+            result = SectionResult(summary=dict(recording=ctx.session.label, weight_fit_status='not_estimable', reason=reason))
+            fig = Figure(figsize=(8,4));ax=fig.subplots();ax.axis('off');ax.text(.5,.5,'Weights not estimated: '+reason,ha='center',wrap=True)
+            result.add_figure('Weight fit unavailable',fig,method=reason)
+            result.notes.append('Not estimated; excluded from all weight-summary denominators.')
+            return result
+        if ctx.cohort.n < 2:
+            return not_estimable('fewer than 2 eligible trials')
         ctx.progress('S14: S10 velocity bins and full-run model fit')
         data = D.build_data(ctx.cohort, spec, cache=ctx.cached)
+        if data.n < 50:
+            return not_estimable('fewer than 50 valid velocity bins')
         name, basis = ctx.params['decoder'], ctx.params['weight_basis']
         fitted = ctx.cached(('s14_weights', id(ctx.cohort), spec.key(ctx.criteria), name, basis,
                              tuple(sorted(D.decoder_params(D.get(name), p).items()))),
@@ -184,6 +194,13 @@ class DecoderWeights(Section):
         ctx.check_cancel()
         weights = fitted['weights']
         rows = channel_rows(layout, data.electrode_ids, weights, fitted['keep'])
+        exposure = len(ctx.session.counts) * ctx.session.frame_seconds
+        event_counts = np.count_nonzero(ctx.session.counts > 0, axis=0)
+        event_lookup = {int(e)-1: int(n) for e, n in zip(ctx.session.electrode_ids, event_counts)}
+        for row in rows:
+            count = event_lookup.get(row['channel_0based'])
+            row['event_count'] = count if count is not None else ''
+            row['event_hz'] = count / exposure if count is not None and exposure > 0 else np.nan
         depth = depth_rows(rows, ctx.params['depth_group_size'])
         unit = 'velocity / input SD' if basis == 'per_SD' else f'velocity / {data.feature_unit}'
         banner = f'{ctx.session.label}\n{D.label(name)}; {basis}; {data.n} bins'
@@ -222,7 +239,7 @@ class DecoderWeights(Section):
         result.tables.update(channel_weights=rows, depth_groups=depth)
         result.notes.extend(['按当前 run 的 S10 有效样本重新全量拟合，仅用于描述权重，不是 CV 性能评估。',
                              '默认 per_SD 权重表示输入增加一个拟合标准差的速度敏感度。相关通道会分摊权重；权重大小不能替代删通道后的解码性能变化。',
-                             'Elec# 1 靠近 fan-in、128 靠近尖端。没有植入方向和深度标定时，只比较沿杆位点位置，不推断解剖深度。',
+                             'Elec# 0 靠近 fan-in、127 靠近尖端。没有植入方向和深度标定时，只比较沿杆位点位置，不推断解剖深度。',
                              '灰色为未传输通道，常数通道权重为零。位置分组均值只在已传输位点上计算，需同时查看覆盖数量。'])
         if name == 'velocity_kf':
             result.notes.append('KF 图显示稳态输入增益；实际 trial 开始阶段的增益随状态协方差变化。观测矩阵 C 不作为神经到速度的解码权重。')

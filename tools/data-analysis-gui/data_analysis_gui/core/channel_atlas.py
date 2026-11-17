@@ -22,7 +22,7 @@ def channel_pages(ids, significant, q, pvalues=None):
 
 def atlas_figure(heading, page, pages, banner, xlabel, footer):
     # A fixed layout avoids expensive constrained-layout passes on 64 panels.
-    fig = Figure(figsize=(17, 14.5), dpi=100)
+    fig = Figure(figsize=(17, 15.7), dpi=100)
     axes = fig.subplots(8, 8, sharex=False, sharey=False).ravel()
     fig.subplots_adjust(left=.045, right=.988, bottom=.07, top=.91, hspace=.66, wspace=.58)
     fig.suptitle(f'{heading} · page {page}/{pages}\n{banner}', fontsize=9, y=.985)
@@ -51,6 +51,9 @@ def append_anova_atlas(result, info, ids, banner):
                         fmt='o-', ms=2, lw=.75, elinewidth=.5, capsize=1.3, color=color)
             ax.axhline(info['mean_hz'][j], color=style.GREY, ls='--', lw=.5)
             ax.set_xticks([0, 90, 180, 270, 315])
+            for tick in ax.get_xticklabels():
+                tick.set_rotation(45)
+                tick.set_ha('right')
             ax.set_xlim(-15, 330)
             ax.set_title(f'E{int(ids[j])}{" *" if sig[j] else ""} · q={q[j]:.1g}', fontsize=6, color=color, pad=3)
             for d in range(8):

@@ -51,6 +51,7 @@ S14 第七张图为有效通道深度分布：整段加载的 run 中任意一�
   「停止当前」直接终止当前分析进程，之后继续执行等待任务；「清空待执行」只移除等待任务。任务队列窗口显示每项状态和进度，双击可核对提交时的设置；「日志」查看输出。关闭程序会停止当前任务并清空等待任务，队列不跨重启恢复；已完整保存的结果保留，中断的 partial 结果不作为有效缓存。
 - **标题栏**：`单记录分析 Single-session` / `跨记录分析 Cross-session`；`⚡ 一键计算 Compute All` 在后台运行当前模式下的全部分析项目
 - **跨记录一键报告**：勾选记录后点击「一键报告」，按数据与实验范式、通道稳定性、通讯稳定性、离线解码、在线 CO8 行为、在线 Grid 行为六类整理 PNG。原计算目录保持不变，额外副本保存到 `E:\AitBCI\data_analysis_gui_output\keaiduo\report\起始日期_结束日期_Nruns_v1`，同日期范围和run数量再次生成时递增版本。离线解码仅使用离线 CO8/Grid，在线行为仅使用对应在线记录；缺少某类记录时明确跳过，计算失败时保留可用图片并标记未完成。「报告文件夹」可打开最近生成的报告；`report.json` 记录所选记录、来源和生成状态。
+- **报告空间图**：X01 同时导出 default 电极 ID 网格与 physical 真实排列；真实排列优先采用最新日期的天枢 mapping。新增 `07_方向调谐_S05` 和 `08_解码权重_S14`，均包含 `runs` 与 `summary_all_runs`。S05 输出 tuning 的 mean/median；S14 输出 |wx|、|wy|、norm 的 mean/median 和深度权重/二值事件率分布。支持 Electrode #、Depth、去掉 Shank1 的 7shank（保留2～8编号）。深度使用 corrected CSV，Shank1 +106850 µm；summary只包括本次勾选记录，缺测排除，未检验不当作未调谐。S14 沿用本报告 S10 参数独立拟合。
   （单日：所选多份记录各自的全部单日 section，勾选全部记录选项则使用所有可见记录；跨天：当前勾选记录 × 全部跨天 section）。
   S08 需要通道配置 INI 或 Neuralinsight 日志、S11 只对 online 记录运行，不满足时自动跳过。计算期间可继续浏览，完成一项显示一项。
 - **Topbar · Preprocessing**：数据目录与数据类型（CO8 / Grid / CO8 online / Grid online）、
@@ -211,6 +212,8 @@ data-analysis-gui/
 导出结果时同时保存一份 `GUIDE.md`。格式：`## 图 N：<add_figure 的标题>` 下依次是 `### 计算公式`、`### 结果解读`、`### 质量评价标准`；
 `tests/test_sections.py` 检查每张图都有对应说明、结果解读与质量标准的面板分组一一对应。说明不进入结果签名，修改说明不会触发重算。
 
+**S15 任务回放**：选择一份 CO8 / Grid 记录并计算 S15，在结果的「任务回放」页播放，默认 1× 实时。支持暂停、倍速、进度拖动、上一/下一 trial、轨迹尾迹和保存速度箭头。任务布局读取与这份 XDF 唯一匹配的 `task_config.json` / `logs/task.log`；位置、速度、目标、trial 状态使用已加载的 XDF cursor_state 全段，不受成功 trial 或神经筛选限制。超阈值缺口明确标记，不跨 trial 插值。结果目录的 `attachments/task_replay.html` 可独立双击打开，JSON/HTML 也进入哈希校验和批次导出；原始窗口未记录时会注明估计范围。
+
 **新增或修改 section**：复制目录并把版本号加一（例如 `s05_anova_v2/`），在 `section.py` 中定义 `SECTION = ...`。
 注册表自动发现目录，默认显示最高版本，旧版本可在「版本」下拉中切回。每张图用
 `result.add_figure(title, fig, method='计算方式…', data={'表名': rows})` 注册；只用 matplotlib 面向对象接口。
@@ -238,8 +241,18 @@ uv run --locked python tests/ui_smoke.py .local/ui   # 需桌面：单日 / 筛�
 
 ### 在线滚动 BPS
 
-S13保留原任务block成功率和到靶时间统计。所有BPS使用累计60秒有效尝试时间滚动窗口，每次trial完成时更新。ITI、block休息、反馈等待从时间轴中排除；选择dwell、失败和超时耗时保留。开头不足60秒不计算，缺失计时或trial断档会重置窗口，不跨session/录制片段。
+S13保留原任务block成功率和到靶时间统计。所有BPS使用累计60秒有效尝试时间滚动窗口，按1秒步长更新。ITI、block休息、反馈等待从时间轴中排除；选择dwell、失败和超时耗时保留。长run从第60秒开始；仅整个run不足60秒时按实际有效时长折算，缺失计时或trial断档会重置窗口，不跨session/录制片段。
 
 左边界trial只累计落在窗口内的耗时，选择结局按完成时刻计数。Grid仅画C×log₂(N)/60。CO8选择BPS采用同一T=60秒；Fitts保持其独立公式，用同一60秒范围内完整成功trial的难度/外向运动时间，边界不完整trial不参与Fitts。
 
-X08按run汇总这些完整60秒窗口的median/IQR和peak；Grid采用横向A4比例上下两个子图并共用run横轴：上图为蓝色BPS分布及橙色peak，下图为橘色成功trial到靶时间median/IQR（秒），均保留数值标注。峰值明细导出有效时间范围、trial范围。已不再输出原先按block或整场计算的BPS图；成功率和到靶时间保持原统计口径。一键报告使用相同规则。
+X08按run汇总60秒、step 1秒窗口的median/IQR和peak（整个run不足60秒时用实际全程窗口折算）；Grid采用横向A4比例上下两个子图并共用run横轴：上图为蓝色BPS分布及橙色peak，下图为橘色成功trial到靶时间median/IQR（秒），均保留数值标注。峰值明细导出有效时间范围、trial范围。已不再输出原先按block或整场计算的BPS图；成功率和到靶时间保持原统计口径。一键报告使用相同规则。
+
+一键报告追加离线行为目录 `09_离线行为_Grid_BPS_TTT` / `10_离线行为_CO8_BPS_TTT`：直接读取所选 run 的 trials.csv，可在日期范围报告中纳入无 XDF 的 run。每 run 输出 block 成功率/TTT、完整 60 秒有效任务时间窗口 BPS、成功 trial 的 TTT 分布；summary_all_runs 汇总各 run 的 BPS median/IQR/peak 和 TTT。空记录标为不可计算；不足 60 秒的整个 run 按实际时长 ratio 折算，长 run 从第 60 秒起按 1 秒步长滑动。电极位置图和 elec_index 统一为 0–127；Shank 保留 1–8，深度轴仍使用 µm。
+
+导出字号固定：分析图标题 18 pt、坐标及色条标签 14 pt、刻度与图例 11 pt，不随旧字号百分比叠加。记录/实验范式示意图（X00、Session Overview）保留原有样式，不套用此规则；长标题自动换行。PNG、SVG、PDF 和一键报告共用该导出规则。
+
+一键报告默认仅导出各分类下的 `summary_all_runs`。勾选“导出每个 run 的图”后，才附带逐 run 的分析图、行为图和每日首个 run 的 BGA 图。汇总始终使用全部所选 run 的有效数据；此开关不改变统计口径。默认模式会复用已有缓存，缺少缓存时只保存单 run 的计算表和摘要，不保存逐 run 图文件。界面复选框及记录勾选列的选中标记统一为 √。
+
+一键报告共用 `report/individual_runs` 单 run 缓存池：S05/S14/S10/S13 原分析结果、S05/S14 深度图、BGA 数据和图、BPS/TTT 数据和图分别按输入内容与设置建立缓存。再次导出相同 run 时先读取并校验缓存；原单记录缓存目录移除后，也可以从池子恢复读取。文件采用 SHA-256 校验，数据、mapping、参数或相关代码变化只重建对应缓存；“强制重算”会绕过池子重新生成。报告通过硬链接引用不可变的池子文件，同盘不重复占用图文件空间，不支持硬链接时才复制。跨 run 的 `summary_all_runs` 始终按本次选择重新汇总，不复用其他选择的汇总数值。已有报告不会因缓存更新而被覆盖。
+
+缓存池先按 section 分类（`S05`、`S14`、`BGA`、`BPS_TTT` 等），再按 `日期_run编号_任务` 分类。每个 run 下按分析类型和输入/参数版本保存；版本内 `figures/` 存放图片，`data/` 存放 CSV、计算结果和绘图数据，`entry.json` 记录来源、参数和校验信息。打开该 run 的 `index.html` 可浏览图片并获取生成数据；`index.json` 提供机器可读索引。不同设置的版本分别保留，避免错误复用。

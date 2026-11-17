@@ -14,10 +14,11 @@ EXPORT_DIR = LOCAL_DIR / 'exports'
 DEFAULT_DATA_ROOT = Path(os.environ.get('DAGUI_DATA_ROOT', 'E:/AitBCI/data/keaiduo'))
 BASE_LAYOUT_XLSX = DEFAULT_DATA_ROOT / 'channel_layout' / '天枢3.0_ChannelMap.xlsx'
 _DATED_LAYOUTS = sorted(BASE_LAYOUT_XLSX.parent.glob('天枢3.0_ChannelMap[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].xlsx'))
-DEFAULT_LAYOUT_XLSX = (BASE_LAYOUT_XLSX if BASE_LAYOUT_XLSX.is_file() or not _DATED_LAYOUTS else _DATED_LAYOUTS[-1])
+DEFAULT_LAYOUT_XLSX = (_DATED_LAYOUTS[-1] if _DATED_LAYOUTS else BASE_LAYOUT_XLSX)
 LEGACY_DEPTH_CSV = DEFAULT_DATA_ROOT / 'channel_layout' / '20260917_kad_channel_depth_TS-3.0.csv'
 DEFAULT_DEPTH_CSV = DEFAULT_DATA_ROOT / 'channel_layout' / '20260917_kad_channel_depth_TS-3.0_corrected.csv'
 LEGACY_LAYOUT_XLSX = DEFAULT_DATA_ROOT / 'channel_layout' / 'TS-3.0 ChannelMap-4code.xlsx'
+BGA_SHANK_PROJECTION = DEFAULT_DATA_ROOT / 'channel_layout' / 'BGA_shank_projection.png'
 OUTPUT_DIR_NAME = 'data_analysis_gui_output'
 
 

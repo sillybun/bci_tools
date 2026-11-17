@@ -29,7 +29,7 @@ def load_depths(path, shank1_offset_um=106850.):
                 if ch in depths or not np.isfinite(raw + offset):
                     raise ValueError('深度 CSV 通道重复或深度非有限')
                 depths[ch] = dict(channel_0based=ch, csv_channel_0based=csv_channel,
-                                  csv_shank=shank, shank=plot_column+1, elec_index=elec_row+1, depth_original_um=raw,
+                                  csv_shank=shank, shank=plot_column+1, elec_index=elec_row, depth_original_um=raw,
                                   depth_offset_um=offset, depth_um=raw+offset)
     if set(depths) != set(range(1024)):
         raise ValueError('深度 CSV 必须完整覆盖 0–1023 通道')

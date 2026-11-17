@@ -106,7 +106,7 @@ class OnlineBehavior(Section):
         result.tables.update(block_metrics=rows, trials=trials)
         result.summary.update(recording=session.label, behavior_source=source,
                               **summarize(trials))
-        result.summary.update(bps_window_seconds=60, bps_summary_statistic='median_of_full_60_active_second_windows')
+        result.summary.update(bps_window_seconds=60, bps_step_seconds=1, bps_short_run_policy='ratio_actual_duration_only_if_entire_run_under_60s', bps_summary_statistic='median_of_60s_step1s_windows_or_short_run_ratio')
         for key, _ in rolling_bps.methods(session.task_mode):
             result.summary[key] = daily[0][f'{key}_median']
             result.summary[f'{key}_peak'] = daily[0][f'{key}_peak']

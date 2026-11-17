@@ -6,15 +6,20 @@ import queue
 import pytest
 
 from data_analysis_gui import storage, worker
+from data_analysis_gui import config as C
 from data_analysis_gui.core.catalog import Recording
 from data_analysis_gui.core.filters import TrialFilter
 from data_analysis_gui.gui.task_queue import TaskQueue
-from data_analysis_gui.reporting import CATEGORIES, report_plan
+from data_analysis_gui.reporting import CATEGORIES, SPATIAL_CATEGORIES, report_plan
 from data_analysis_gui.sections.base import SectionResult, new_figure
 
 
 @pytest.fixture
 def report_request(tmp_path, monkeypatch):
+    from PIL import Image
+    reference=tmp_path/'BGA_shank_projection.png'
+    Image.new('RGB',(60,40),'white').save(reference)
+    monkeypatch.setattr(C,'BGA_SHANK_PROJECTION',reference)
     recordings = []
     for i, (mode, online) in enumerate((('centerout', False), ('grid', False),
                                        ('centerout', True), ('grid', True)), 1):
@@ -23,7 +28,7 @@ def report_request(tmp_path, monkeypatch):
         recordings.append(Recording(path, path.name, f'2026-11-0{i}', mode, online, str(i)))
     lookup = {str(r.path): r for r in recordings}
     monkeypatch.setattr(worker, 'describe', lambda path, root: lookup[str(path)])
-    jobs, report = report_plan(recordings, lambda section: section.defaults())
+    jobs, report = report_plan(recordings, lambda section: section.defaults(),include_run_exports=True)
     report['root'] = str(tmp_path / 'reports')
     request = dict(data_root=str(tmp_path), output_root=str(tmp_path / 'normal-results'),
                    criteria=TrialFilter().to_dict(), font_percent=120, report=report,
@@ -39,7 +44,7 @@ def test_report_plan_and_queue_keep_one_frozen_report(report_request):
         selected = [lookup[path] for path in job['recordings']]
         if category == CATEGORIES[3]:
             assert all(not r.online for r in selected)
-        elif category in CATEGORIES[4:]:
+        elif category in CATEGORIES[4:6]:
             assert all(r.online for r in selected)
             assert all(r.task_mode == ('centerout' if category == CATEGORIES[4] else 'grid') for r in selected)
     manager = TaskQueue(queue.Queue())
@@ -65,6 +70,9 @@ def seed_cache(request):
         fig.subplots().plot([0, 1], [0, 1])
         result = SectionResult()
         result.add_figure(title, fig, method='test input')
+        if sid == 'x01':
+            from data_analysis_gui.sections.x01_channel_stability_v1.chip_layout import append_chip_layout
+            append_chip_layout(result)
         if sid == 'x08' and task == 'CO8':
             peak = new_figure(2, 1)
             peak.subplots().plot([0, 1], [0, 1])
@@ -97,7 +105,7 @@ def test_report_cached_sources_copies_and_derivatives_preserve_originals(report_
     assert len(completed) == 1
     folder = Path(completed[0]['folder'])
     assert folder.name == '2026-11-01_2026-11-04_4runs_v1'
-    assert {p.name for p in folder.iterdir() if p.is_dir()} == set(CATEGORIES)
+    assert {p.name for p in folder.iterdir() if p.is_dir()} == set(CATEGORIES + SPATIAL_CATEGORIES)
     manifest = json.loads((folder / 'report.json').read_text(encoding='utf-8'))
     assert manifest['complete'] and not manifest['failures']
     assert manifest['run_count'] == 4 and manifest['recording_count'] == 4
@@ -107,6 +115,8 @@ def test_report_cached_sources_copies_and_derivatives_preserve_originals(report_
     assert all(path.read_bytes() == original for path, original in sources.items())
     assert all(path.read_bytes() in sources.values() for path in copied)
     assert (folder / CATEGORIES[3] / 'Velocity.png').is_file()
+    assert list((folder / CATEGORIES[1]).glob('*BGA_Chip_Layout_Mapping.png'))
+    assert not list((folder / CATEGORIES[1] / '补充计算图').glob('*BGA_Chip_Layout_Mapping.png'))
     assert not list((folder / CATEGORIES[4]).glob('CO8_Behavior_Overview_*.png'))
     assert list((folder / CATEGORIES[5]).glob('*_Grid_Behavior.png'))
     assert list((folder / CATEGORIES[4]).glob('*Run_Rolling_BPS_Median_and_IQR.png'))
@@ -150,3 +160,47 @@ def test_report_counts_multiple_xdf_in_one_run_once(tmp_path):
     assert report['run_count'] == 2
     assert report['recording_count'] == 3
     assert report['name'] == '2026-11-06_2026-11-06_2runs'
+    assert report['include_run_exports'] is False
+
+
+def test_summary_only_report_uses_cached_run_data_but_exports_no_run_figures(report_request,monkeypatch):
+    request,_=report_request
+    seed_cache(request)
+    request['report']['include_run_exports']=False
+    monkeypatch.setattr(worker,'get_session',lambda r:pytest.fail('summary must reuse valid full caches'))
+    events=[]
+    monkeypatch.setattr(worker,'emit',lambda event,**values:events.append(dict(event=event,**values)))
+    assert worker.run(request)==0
+    root=Path(next(e['folder'] for e in events if e['event']=='complete'))
+    images=list(root.rglob('*.png'));assert images
+    assert all('summary_all_runs' in p.relative_to(root).parts for p in images)
+    assert not list(root.rglob('runs'))
+    assert not list(root.rglob('BGA_daily_first_run'))
+    manifest=json.loads((root/'report.json').read_text(encoding='utf-8'))
+    assert manifest['include_run_exports'] is False
+    assert all(not s['pngs'] for s in manifest['sources'] if s['section'] in ('s05','s14','s10','s13'))
+
+
+def test_cold_summary_cache_is_separate_from_full_figure_cache(report_request):
+    request,_=report_request
+    full,errors=worker.plan(request);assert not errors
+    brief,errors=worker.plan(dict(request,report_summary_only=True));assert not errors
+    for a,b in zip(full,brief):
+        if a['section'].mode=='single':
+            assert a['signature']!=b['signature']
+            assert b['inputs']['figure_export']=='tables_only'
+        else:assert a['signature']==b['signature']
+
+
+def test_reports_reuse_pool_when_original_single_cache_is_removed(report_request,monkeypatch):
+    import shutil
+    request,_=report_request;seed_cache(request)
+    assert worker.run(request)==0
+    jobs,errors=worker.plan(request);assert not errors
+    base=Path(request['output_root']).resolve()
+    for j in jobs:
+        if j['section'].mode=='single':
+            assert j['folder'].resolve().is_relative_to(base)
+            shutil.rmtree(j['folder'])
+    monkeypatch.setattr(worker,'get_session',lambda r:pytest.fail('must load preserved run from shared pool'))
+    assert worker.run(request)==0

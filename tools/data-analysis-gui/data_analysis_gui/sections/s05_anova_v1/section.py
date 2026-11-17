@@ -76,7 +76,14 @@ class Anova(Section):
         p, cohort, session = ctx.params, ctx.cohort, ctx.session
         result = SectionResult()
         if cohort.n < 16:
-            raise ValueError(f'保留的 trial 太少（{cohort.n}），无法做 ANOVA')
+            result.tables['anova_channels'] = [dict(electrode=int(e), active=False, tested=False,
+                significant=False, q='', p='', F='') for e in session.electrode_ids]
+            result.summary.update(recording=session.label, trials=cohort.n, tested=False, alpha=p['alpha'])
+            fig = new_figure(8, 4)
+            fig.subplots().text(.5,.5,f'Not tested: {cohort.n} eligible trials (minimum 16)',ha='center')
+            result.add_figure('ANOVA not tested',fig,method='Insufficient trials; excluded from tuning summary denominators.')
+            result.notes.append('Trial 不足，不将未检验通道视为没有 tuning。')
+            return result
         ctx.progress('ANOVA')
         st, x, dirs = channel_anova(ctx)
         if len(x) < cohort.n:
@@ -180,7 +187,7 @@ class Anova(Section):
             rows.append(row)
         result.tables['anova_channels'] = rows
         result.summary.update(
-            trials=len(x), active_channels=int(active.sum()), significant_channels=int(sig.sum()),
+            recording=session.label, tested=True, trials=len(x), active_channels=int(active.sum()), significant_channels=int(sig.sum()),
             alpha=p['alpha'], df=list(st['df']),
             top_electrodes_by_F=[int(ids[j]) for j in np.argsort(-st['F'])[:10]],
             preferred_direction_counts_deg={f'{d * 45}': int(np.sum(preferred[sig] == d)) for d in range(8)},

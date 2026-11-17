@@ -104,3 +104,14 @@ def test_explicit_empty_note_does_not_mislabel_online_recording_as_manual(tmp_pa
         '2026-11-09', 'centerout', True, '002', header_info={'condition_tag': ''}, condition='脑控')
     label = recording_label(r)
     assert 'manual' not in label and 'no assist' not in label and label.endswith('run002')
+
+def test_behavior_bundle_supports_new_root_csv_and_task_log(tmp_path):
+    from types import SimpleNamespace
+    from data_analysis_gui.core.behavior import source_files
+    folder=tmp_path/'20261118'/'run-004-Grid-offline-8x8'
+    (folder/'xdf').mkdir(parents=True);(folder/'logs').mkdir()
+    xdf=folder/'xdf/recording.xdf';xdf.write_bytes(b'xdf')
+    trials=folder/'trials.csv';trials.write_text('header\n')
+    log=folder/'logs/task.log';log.write_text('Grid auto-scale enabled: rows=8, cols=8\n')
+    files=source_files(SimpleNamespace(path=xdf,task_mode='grid'))
+    assert files['trials']==trials and files['log_0']==log

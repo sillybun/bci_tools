@@ -11,7 +11,7 @@ import tempfile
 import numpy as np
 from matplotlib.lines import Line2D
 
-from . import storage
+from . import config as C, storage
 from .core.catalog import run_folder
 from .core.crossday import recording_labels, recording_ticks
 from .core.style import DEFAULT_FONT_PERCENT, finish_figure
@@ -25,6 +25,7 @@ CATEGORIES = (
     '04_离线解码分析', '05_在线脑控行为_CO8', '06_在线脑控行为_Grid',
 )
 
+SPATIAL_CATEGORIES = ('07_方向调谐_S05', '08_解码权重_S14')
 
 def report_run_group(recording):
     """Count split run folders separately, but not multiple XDFs in one run."""
@@ -35,9 +36,23 @@ def report_run_group(recording):
                      recording.run or recording.key))
 
 
-def report_plan(recordings, params_for):
+def report_plan(recordings, params_for, *, behavior_folders=None, online_behavior_folders=None, date_range=None, analysis_excluded_dates=(), include_run_exports=False):
     """Use all sessions for quality, offline sessions for CV, and online sessions for behavior."""
-    recordings = sorted(recordings, key=lambda r: (r.date, r.key))
+    requested_recordings = list(recordings)
+    excluded_dates = set(analysis_excluded_dates)
+    if online_behavior_folders is None:
+        online_behavior_folders = []
+        for rec in requested_recordings:
+            folder = run_folder(rec.path) or rec.path.parent
+            if rec.online and rec.date not in excluded_dates and ((folder/'trials.csv').is_file() or (folder/'behavior/trials.csv').is_file()):
+                online_behavior_folders.append(str(folder))
+    if behavior_folders is None:
+        behavior_folders = []
+        for rec in requested_recordings:
+            folder = run_folder(rec.path) or rec.path.parent
+            if not rec.online and ((folder/'trials.csv').is_file() or (folder/'behavior/trials.csv').is_file()):
+                behavior_folders.append(str(folder))
+    recordings = sorted((r for r in requested_recordings if r.date not in excluded_dates), key=lambda r: (r.date, r.key))
     if not recordings or any(not r.date for r in recordings):
         raise ValueError('一键报告需要选择日期已知的记录')
     jobs, categories, skipped = [], [], []
@@ -50,6 +65,11 @@ def report_plan(recordings, params_for):
         raw = dict(params_for(section))
         if sid == 'x01':
             raw['map_quantity'] = 'max_code'
+            raw['map_layout'] = 'both'
+        if sid == 's14':
+            source = versions('s10')[-1]
+            raw['_source_sections'] = {'s10': {'version': source.version, 'params': params_for(source)}}
+            raw['depth_csv'] = str(C.DEFAULT_DEPTH_CSV)
         if sid == 's10' and not int(raw.get('n_boot', section.defaults()['n_boot'])):
             raw['n_boot'] = 200
         section.resolve_params(raw)
@@ -74,9 +94,17 @@ def report_plan(recordings, params_for):
             add('x08', online, category)
         for rec in online:
             add('s13', [rec], category)
-    run_count = len({report_run_group(r) for r in recordings})
+    for rec in recordings:
+        add('s05', [rec], SPATIAL_CATEGORIES[0])
+        add('s14', [rec], SPATIAL_CATEGORIES[1])
+    behavior_folders = sorted(set(map(str,behavior_folders)))
+    online_behavior_folders = sorted(set(map(str,online_behavior_folders)))
+    run_count = len({report_run_group(r) for r in recordings} | {str(Path(p).resolve()) for p in behavior_folders+online_behavior_folders})
+    first_date,last_date = date_range or (recordings[0].date,recordings[-1].date)
     return jobs, dict(
-        name=f'{recordings[0].date}_{recordings[-1].date}_{run_count}runs', root=str(REPORT_ROOT),
+        name=f'{first_date}_{last_date}_{run_count}runs', offline_behavior_folders=behavior_folders, analysis_excluded_dates=sorted(excluded_dates), root=str(REPORT_ROOT),
+        online_behavior_folders=online_behavior_folders,
+        include_run_exports=bool(include_run_exports),
         run_count=run_count, recording_count=len(recordings),
         recordings=[dict(path=str(r.path), key=r.key, date=r.date, task_mode=r.task_mode,
                          online=r.online, label=label, run_group=report_run_group(r))
@@ -167,8 +195,14 @@ def assemble_report(report, entries, failures, font_percent, send):
     root = Path(report['root'])
     root.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='.report_', dir=root))
+    include_runs=bool(report.get('include_run_exports',False))
+    from .report_run_pool import RunPool,link_file,dependencies
+    pool=RunPool(root/'individual_runs',refresh=bool(report.get('recompute')))
     manifest = dict(selection=report['recordings'], run_count=report.get('run_count'),
+                    font_policy=dict(title_pt=18, axis_label_pt=14, tick_pt=11, schematics='preserve legacy style'),
                     recording_count=len(report['recordings']), font_percent=font_percent,
+                    analysis_excluded_dates=report.get('analysis_excluded_dates', []),
+                    include_run_exports=include_runs,
                     skipped=report['skipped'], failures=failures, sources=[], complete=False,
                     methods={
                         'Velocity.png': 'S10 held-out mean x/y velocity R² from five chronological block folds '
@@ -184,21 +218,31 @@ def assemble_report(report, entries, failures, font_percent, send):
         for entry in entries:
             category = work / entry['category']
             category.mkdir(exist_ok=True)
+            if not include_runs:
+                category=category/'summary_all_runs'
+                category.mkdir(exist_ok=True)
             record, folder = entry['record'], Path(entry['folder'])
+            if record['section']['mode']=='single':
+                folder=pool.section(entry)
+                entry['folder']=str(folder)
+                record=json.loads((folder/'result.json').read_text(encoding='utf-8'))
+                entry['record']=record
             paths = entry['job']['recordings']
-            key = storage.fingerprint(paths)[:8]
+            key = storage.fingerprint(dict(paths=paths, params=entry['job'].get('params', {})))[:8]
             sid = entry['job']['section']
             session = labels.get(str(Path(paths[0]))) if len(paths) == 1 else None
             name = f'_{storage.slug(session["label"])}' if session else ''
             prefix = f'{sid.upper()}{name}_{key}'
             copied = []
             for figure in record['figures']:
+                if not include_runs and record['section']['mode']=='single':
+                    continue
                 relative = figure['files'].get('png')
                 if relative:
                     main = (
                         (sid == 'x00' and figure['title'] == 'Session Overview')
                         or (sid == 'x01' and figure['title'] in (
-                            'Electrode Maps by Session', 'Electrode Activity and Direction Tuning'))
+                            'Electrode Maps by Session', 'Electrode Maps by Session - default', 'Electrode Maps by Session - physical', 'Electrode Activity and Direction Tuning', 'BGA Chip Layout Mapping'))
                         or sid == 'x02'
                         or (sid == 'x08' and ('Run Rolling BPS' in figure['title'] or 'Run Time to Target' in figure['title']))
                         or (sid == 'x08' and figure['title'] == 'Online CO8 Run Success and Time to Target')
@@ -206,11 +250,14 @@ def assemble_report(report, entries, failures, font_percent, send):
                         or (sid == 's13' and entry['category'] == CATEGORIES[4]
                             and figure['title'] == 'Online Behavior by Block')
                     )
-                    destination = category if main else category / '补充计算图'
-                    destination.mkdir(exist_ok=True)
+                    if sid in ('s05', 's14'):
+                        destination = category / 'runs' / storage.slug(session['label']) / '原分析图'
+                    else:
+                        destination = category if main else category / '补充计算图'
+                    destination.mkdir(parents=True, exist_ok=True)
                     target = destination / f'{prefix}_{Path(relative).name}'
                     try:
-                        shutil.copy2(folder / relative, target)
+                        link_file(folder / relative, target)
                     except OSError as exc:
                         failures.append(dict(stage='copy PNG', source=str(folder / relative), message=str(exc)))
                         continue
@@ -222,18 +269,30 @@ def assemble_report(report, entries, failures, font_percent, send):
                 entry = dict(entry, label=selected['label'], date=selected['date'])
                 if sid == 's10':
                     offline.append(entry)
-                elif entry['category'] == CATEGORIES[5]:
+                elif include_runs and entry['category'] == CATEGORIES[5]:
                     try:
-                        _grid_behavior(entry, font_percent, category / f'{prefix}_Grid_Behavior.png')
+                        def build_grid(staged):
+                            _grid_behavior(entry,font_percent,staged/'Grid_Behavior.png')
+                            return {}
+                        _,cached,_=pool.get('grid_behavior',paths[0],dict(source=record['signature'],label=entry['label'],style=dependencies(_grid_behavior,Path(__file__).parent/'core/style.py')),build_grid)
+                        if (cached/'figures/Grid_Behavior.png').exists():link_file(cached/'figures/Grid_Behavior.png',category/f'{prefix}_Grid_Behavior.png')
                     except Exception as exc:
                         failures.append(dict(stage='Grid behavior', source=str(folder), message=str(exc)))
         if offline:
             send('message', message='生成离线解码汇总图')
-            _velocity_figure(offline, font_percent, work / CATEGORIES[3])
+            _velocity_figure(offline, font_percent, work / CATEGORIES[3] / ('' if include_runs else 'summary_all_runs'))
+        from .report_spatial import render_report_spatial
+        manifest['spatial'] = render_report_spatial(work, entries, report, font_percent, send,pool=pool)
+        from .report_behavior import render_offline_behavior
+        manifest['offline_behavior'] = render_offline_behavior(work, report.get('offline_behavior_folders', []), font_percent, send,include_runs=include_runs,pool=pool)
+        manifest['online_behavior'] = render_offline_behavior(work, report.get('online_behavior_folders', []), font_percent, send, online=True,include_runs=include_runs,pool=pool)
+        from .report_bga import render_daily_bga
+        manifest['bga_daily'] = (render_daily_bga(work,report,font_percent,send,pool=pool) if include_runs else dict(days=[],skipped='Per-run exports disabled'))
         manifest['complete'] = not failures
     except Exception as exc:
         failures.append(dict(stage='report assembly', message=str(exc)))
         manifest['failures'] = failures
+    manifest['run_pool']=pool.manifest()
     (work / 'report.json').write_text(json.dumps(storage.jsonable(manifest), ensure_ascii=False, indent=2),
                                      encoding='utf-8')
     # A fresh run avoids mixing old selections or stale PNGs under the same date range.
@@ -254,7 +313,14 @@ def assemble_report(report, entries, failures, font_percent, send):
 
 
 def run_report(request, run_jobs, send):
+    request = dict(request)
+    if C.DEFAULT_LAYOUT_XLSX.is_file():
+        request['layout_path'] = str(C.DEFAULT_LAYOUT_XLSX)
     report = request['report']
+    request['report_summary_only']=not bool(report.get('include_run_exports',False))
+    request['report_run_pool_root']=str(Path(report['root'])/'individual_runs')
+    report['recompute']=bool(request.get('recompute'))
+    report['layout_path'] = request.get('layout_path', '')
     if len(request['jobs']) != len(report['categories']):
         raise ValueError('报告任务与目录分组数量不一致')
     task = f'report:{report["name"]}'

@@ -11,21 +11,22 @@ def trials(durations):
                  rt_s=t, outbound_s=t, bits=3) for i, t in enumerate(durations, 1)]
 
 
-def test_60_active_second_windows_include_timeouts_and_update_each_trial():
+def test_60_active_second_windows_include_timeouts_and_step_every_second():
     rows = trials([10] * 6 + [5])
     rows[1]['outcome'] = 'timeout'
     result = rolling_bps.windows(rows, 'grid')
-    assert [(r['trial_start'], r['trial_end']) for r in result] == [(1, 6), (1, 7)]
-    assert [r['active_attempt_seconds'] for r in result] == [60, 60]
+    assert [r['window_end_active_s'] for r in result] == list(range(60,66))
+    assert all(r['active_attempt_seconds']==60 for r in result)
     assert result[0]['bps'] == pytest.approx(5 * 3 / 60)
-    assert result[1]['bps'] == pytest.approx(6 * 3 / 60)
-    assert result[1]['partial_first_trial']
-    assert (result[1]['window_start_active_s'], result[1]['window_end_active_s']) == (5, 65)
+    assert result[-1]['bps'] == pytest.approx(6 * 3 / 60)
+    assert result[-1]['partial_first_trial']
+    assert (result[-1]['window_start_active_s'], result[-1]['window_end_active_s']) == (5, 65)
     assert result[0]['timeouts'] == 1
 
 
 def test_warmup_and_zero_or_invalid_time_never_inflate_peak():
-    assert rolling_bps.windows(trials([10] * 5), 'grid') == []
+    short, = rolling_bps.windows(trials([10] * 5), 'grid')
+    assert short['bps']==pytest.approx(.3) and short['window_ratio']==pytest.approx(50/60)
     assert rolling_bps.windows(trials([0] * 10), 'grid') == []
     rows = trials([30, 30, math.nan, 30, 30])
     result = rolling_bps.windows(rows, 'grid')
@@ -39,15 +40,16 @@ def test_warmup_and_zero_or_invalid_time_never_inflate_peak():
 
 def test_window_left_boundary_excludes_completion_at_exact_cutoff():
     result = rolling_bps.windows(trials([20] * 4), 'grid')
-    assert [(r['trial_start'], r['trial_end']) for r in result] == [(1, 3), (2, 4)]
+    assert len(result)==21
+    assert result[0]['trial_start']==1 and result[-1]['trial_start']==2
     assert all(r['bps'] == pytest.approx(9 / 60) for r in result)
 
 
 def test_partial_attempt_time_is_clipped_and_fitts_uses_only_contained_trials():
-    grid, = rolling_bps.windows(trials([30, 40]), 'grid')
+    grid = rolling_bps.windows(trials([30, 40]), 'grid')[-1]
     assert grid['bps'] == pytest.approx(6 / 60)
     assert grid['active_attempt_seconds'] == 60
-    co8, = rolling_bps.windows(trials([30, 40]), 'centerout')
+    co8 = rolling_bps.windows(trials([30, 40]), 'centerout')[-1]
     assert co8['fitts_bps'] == pytest.approx(3 / 40)
     assert co8['fitts_fully_contained_trials'] == 1
 
@@ -57,9 +59,9 @@ def test_daily_distribution_uses_only_full_windows_and_keeps_peak_source():
     b = rolling_bps.windows(trials([20] * 3), 'grid', session='B', date='2026-11-09')
     daily = rolling_bps.daily_summary(a + b, 'grid', dates=['2026-11-10'])
     row = daily[0]
-    assert row['windows'] == 3 and row['sessions'] == 2
+    assert row['windows'] == 12 and row['sessions'] == 2
     assert row['bps_median'] == pytest.approx(.3)
-    assert row['bps_q1'] == pytest.approx(.225) and row['bps_q3'] == pytest.approx(.3)
+    assert row['bps_q1'] == pytest.approx(.3) and row['bps_q3'] == pytest.approx(.3)
     assert row['bps_peak_session'] == 'A'
     assert (row['bps_peak_trial_start'], row['bps_peak_trial_end']) == (1, 6)
     assert row['bps_peak_end_active_s'] == 60
@@ -204,3 +206,25 @@ def test_six_bps_ttt_reference_uses_verified_grid_size():
         assert reference.get_ydata()[0] == .5
     finally:
         fig.clear()
+
+
+def test_in_progress_time_counts_without_using_future_outcomes():
+    rows=rolling_bps.windows(trials([30,40]),'grid')
+    assert [r['window_end_active_s'] for r in rows]==list(range(60,71))
+    assert rows[0]['bps']==pytest.approx(3/60)
+    assert rows[0]['partial_last_trial'] and rows[0]['window_trials']==1
+    assert rows[-1]['bps']==pytest.approx(6/60)
+    co8=rolling_bps.windows(trials([30,40]),'centerout')
+    assert co8[0]['neuralink_bps']==pytest.approx(math.log2(7)/60)
+    assert co8[0]['fitts_bps']==pytest.approx(3/30)
+
+
+def test_short_run_ratio_and_long_run_strict_grid():
+    short,=rolling_bps.windows(trials([.75]),'grid')
+    assert short['effective_window_seconds']==.75 and short['bps']==4
+    assert short['window_ratio']==.75/60 and short['partial_window']
+    rows=rolling_bps.windows(trials([10]*6+[.75]),'grid')
+    assert [r['window_end_active_s'] for r in rows]==[60]
+    assert not rows[0]['partial_window']
+    # Unknown timing/identity gaps never become ratio windows in a longer run.
+    assert rolling_bps.windows(trials([20,math.nan,20]),'grid')==[]

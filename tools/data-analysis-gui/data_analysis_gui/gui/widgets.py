@@ -263,6 +263,16 @@ class ResultView(ttk.Frame):
         sentence = result_sentence((record.get('section') or {}).get('id'), record.get('summary') or {})
         self.summary_text.set('本次结果：' + sentence)
         self.summary_label.pack(side='top', fill='x', before=self.notebook)
+        replay_file = record.get('attachments', {}).get('task_replay.json')
+        if replay_file:
+            from .task_replay import ReplayView
+            try:
+                payload = json.loads((folder / replay_file).read_text(encoding='utf-8'))
+                html = record.get('attachments', {}).get('task_replay.html')
+                self.notebook.add(ReplayView(self.notebook, payload, folder / html if html else None),
+                                  text='任务回放')
+            except (OSError, ValueError, KeyError) as exc:
+                self.notebook.add(text_view(self.notebook, f'回放数据无法读取：{exc}'), text='任务回放')
         for group in group_series(record['figures']):
             if len(group) == 1:
                 text = group[0]['title'][:30]

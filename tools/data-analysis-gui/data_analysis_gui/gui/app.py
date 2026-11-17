@@ -237,14 +237,10 @@ class App(tk.Tk):
         self.sync_output()
         ttk.Button(row, text='打开', command=lambda: open_path(self.ensure_output())).pack(side='left')
         ttk.Checkbutton(row, text='Recompute / 强制重算（忽略已存储结果）', variable=self.recompute).pack(side='left', padx=(16, 0))
-        font_options = tuple(range(80, 161, 10))
-        font_percent = self.prefs.get('font_percent', DEFAULT_FONT_PERCENT)
-        if not isinstance(font_percent, int) or font_percent not in font_options:
-            font_percent = DEFAULT_FONT_PERCENT
-        self.figure_font = tk.StringVar(value=f'{font_percent:d}%')
+        self.figure_font = tk.StringVar(value='18 / 14 / 11 pt')
         ttk.Label(row, text='图表字号').pack(side='left', padx=(16, 4))
-        font_box = ttk.Combobox(row, textvariable=self.figure_font, state='readonly', width=6,
-                                values=[f'{size}%' for size in font_options])
+        font_box = ttk.Combobox(row, textvariable=self.figure_font, state='readonly', width=16,
+                                values=['18 / 14 / 11 pt'])
         font_box.pack(side='left')
         font_box.bind('<<ComboboxSelected>>', self._figure_font_changed)
         ttk.Label(row, text='每张图保存 PNG / SVG / PDF / CSV',
@@ -263,7 +259,7 @@ class App(tk.Tk):
         self.last_export_folder = None
 
     def figure_font_percent(self):
-        return int(self.figure_font.get().removesuffix('%'))
+        return DEFAULT_FONT_PERCENT
 
     def _figure_font_changed(self, _event):
         self.save_preferences()
@@ -314,7 +310,7 @@ class App(tk.Tk):
         self.layout_entry.state([state])
         self.layout_button.state([state])
         self.layout_hint.configure(text='' if self.use_layout.get() else
-                                   '未选中：按电极 index 排在 128 行 × 8 列（1–128 为第 1 列…）')
+                                   '未选中：按电极 ID 排在 128 行 × 8 列，行位置统一为 0–127')
 
     def layout_toggled(self):
         self._layout_state()
@@ -1224,7 +1220,7 @@ class CrossView(ttk.Frame, StatusMixin):
         top.grid(row=0, column=0, sticky='ew')
         top.columnconfigure(0, weight=3)
         top.columnconfigure(1, weight=2)
-        frame, self.rec_tree = recording_tree(top, [('check', '✓', 28), ('date', '日期', 80), ('type', '类型', 76),
+        frame, self.rec_tree = recording_tree(top, [('check', '√', 28), ('date', '日期', 80), ('type', '类型', 76),
                                                     ('run', 'Run', 60), ('condition', '实验条件', 210),
                                                     ('fpga', 'FPGA', 46), ('file', '文件', 260)],
                                               heights=7, selectmode='none')
@@ -1263,6 +1259,9 @@ class CrossView(ttk.Frame, StatusMixin):
         ttk.Button(row, text='一键报告', style='Accent.TButton',
                    command=self.compute_report).pack(side='left', padx=6)
         ttk.Button(row, text='报告文件夹', command=self.open_report_folder).pack(side='left')
+        self.report_include_runs = tk.BooleanVar(value=False)
+        ttk.Checkbutton(side, text='导出每个 run 的图（不勾选时仅导出 summary_all_runs）',
+                        variable=self.report_include_runs).pack(anchor='w', pady=(4, 0))
         self.report_status = tk.StringVar()
         self.report_folder = None
         ttk.Label(side, textvariable=self.report_status, style='Muted.TLabel',
@@ -1327,7 +1326,7 @@ class CrossView(ttk.Frame, StatusMixin):
             tag = label if getattr(r, 'condition', '') else r.data_type
             self.rec_tree.tag_configure(tag, foreground=color)
             run = r.run
-            self.rec_tree.insert('', 'end', iid=r.key, values=('☑' if r.key in self.checked else '☐', r.date,
+            self.rec_tree.insert('', 'end', iid=r.key, values=('√' if r.key in self.checked else '☐', r.date,
                                                                r.data_type, run, getattr(r, 'condition', '') or '—',
                                                                '有' if r.has_fpga_clock else '—',
                                                                r.path.name), tags=(tag,))
@@ -1338,13 +1337,13 @@ class CrossView(ttk.Frame, StatusMixin):
         if not row:
             return
         self.checked.symmetric_difference_update({row})
-        self.rec_tree.set(row, 'check', '☑' if row in self.checked else '☐')
+        self.rec_tree.set(row, 'check', '√' if row in self.checked else '☐')
         self.selection_changed()
 
     def _set_checked(self, keys):
         self.checked = set(keys)
         for r in self.recordings:
-            self.rec_tree.set(r.key, 'check', '☑' if r.key in self.checked else '☐')
+            self.rec_tree.set(r.key, 'check', '√' if r.key in self.checked else '☐')
         self.selection_changed()
 
     def check_all(self):
@@ -1564,7 +1563,8 @@ class CrossView(ttk.Frame, StatusMixin):
             return self._raw_params(self.tabs[section.id])
 
         try:
-            jobs, report = report_plan(self.selected_recordings(), params_for)
+            jobs, report = report_plan(self.selected_recordings(), params_for,
+                                       include_run_exports=self.report_include_runs.get())
         except ValueError as exc:
             messagebox.showwarning('无法生成报告', str(exc))
             return

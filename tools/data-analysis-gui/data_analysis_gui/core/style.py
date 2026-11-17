@@ -8,7 +8,9 @@ import numpy as np
 DIRECTION_COLORS = ('#d1495b', '#edae49', '#a3a948', '#4f9d69', '#00798c', '#30638e', '#6a4c93', '#b5446e')
 GREY, INK, INK2 = '#b0b7bd', '#1b1b1b', '#55534e'
 MISSING = '#d6d4cf'
-DEFAULT_FONT_PERCENT = 120
+DEFAULT_FONT_PERCENT = 100  # Legacy request field; exports use fixed point sizes.
+TITLE_PT, LABEL_PT, TICK_PT = 18, 14, 11
+FONT_POLICY = 'titles18-labels14-ticks11-v1'
 MAX_CODE_COLORS = ('#111111', '#FFD91A', '#FF9400', '#EF2727')   # max code 0..3
 MODEL_COLORS = {'gt': '#2b2b2b', 'ridge': '#2176ae', 'kf': '#e07b39', 'online': '#009e73'}
 # Polar subplot placement for eight directions in a 3x3 grid (centre empty).
@@ -17,20 +19,109 @@ DIRECTION_GRID = {0: (1, 2), 1: (0, 2), 2: (0, 1), 3: (0, 0), 4: (1, 0), 5: (2, 
 
 def apply():
     mpl.rcParams.update({
-        'font.size': 8, 'axes.titlesize': 9, 'axes.labelsize': 8, 'xtick.labelsize': 7, 'ytick.labelsize': 7,
-        'legend.fontsize': 7, 'axes.spines.top': False, 'axes.spines.right': False,
+        'font.size': 11, 'axes.titlesize': TITLE_PT, 'axes.labelsize': LABEL_PT,
+        'xtick.labelsize': TICK_PT, 'ytick.labelsize': TICK_PT,
+        'legend.fontsize': TICK_PT, 'figure.titlesize': TITLE_PT,
+        'axes.spines.top': False, 'axes.spines.right': False,
         'figure.facecolor': 'white', 'savefig.facecolor': 'white', 'pdf.fonttype': 42, 'svg.fonttype': 'none',
         'font.family': ['Arial', 'Microsoft YaHei', 'DejaVu Sans'],
     })
 
 
 def finish_figure(figure, font_percent=DEFAULT_FONT_PERCENT):
-    """Apply the shared typeface and scale all figure text consistently."""
+    """Idempotent role-based typography, including colorbar axes and legends.
+
+    font_percent is retained for old requests; it never changes the fixed sizes.
+    In-cell numbers and data annotations keep their explicit sizes.
+    """
     from matplotlib.text import Text
+
+    if getattr(figure, '_preserve_schematic_fonts', False):
+        if not getattr(figure, '_schematic_legacy_finished', False):
+            for text in figure.findobj(Text):
+                text.set_fontfamily(mpl.rcParams['font.family'])
+                text.set_fontsize((text.get_fontsize()+1)*1.2)
+            figure._schematic_legacy_finished = True
+        return
 
     for text in figure.findobj(Text):
         text.set_fontfamily(mpl.rcParams['font.family'])
-        text.set_fontsize((text.get_fontsize() + 1) * font_percent / 100)
+    for ax in figure.axes:
+        for annotation in ax.texts:
+            if annotation.get_fontsize() > TICK_PT:
+                annotation.set_fontsize(TICK_PT)
+        for title in (ax.title, ax._left_title, ax._right_title):
+            title.set_fontsize(TITLE_PT)
+        for axis in (ax.xaxis, ax.yaxis):
+            axis.label.set_fontsize(LABEL_PT)
+            axis.offsetText.set_fontsize(TICK_PT)
+            for tick in [*axis.get_major_ticks(), *axis.get_minor_ticks()]:
+                tick.label1.set_fontsize(TICK_PT)
+                tick.label2.set_fontsize(TICK_PT)
+        legend = ax.get_legend()
+        if legend:
+            for text in legend.findobj(Text):
+                text.set_fontsize(TICK_PT)
+    for legend in figure.legends:
+        for text in legend.findobj(Text):
+            text.set_fontsize(TICK_PT)
+    for text in figure.texts:
+        text.set_fontsize(TITLE_PT if text is getattr(figure, '_suptitle', None) or text.get_position()[1] >= .9 else TICK_PT)
+    for name in ('_supxlabel', '_supylabel'):
+        text = getattr(figure, name, None)
+        if text is not None:
+            text.set_fontsize(LABEL_PT)
+    _fit_figure_text(figure)
+    figure._font_policy = FONT_POLICY
+
+
+def _fit_figure_text(figure):
+    """Wrap long figure captions and reserve room above manually positioned axes."""
+    import textwrap
+    from matplotlib.textpath import TextToPath
+    measure = TextToPath()
+    width = figure.get_figwidth()*72*.94
+    title = getattr(figure, '_suptitle', None)
+    for text in figure.texts:
+        if text is not title and text.get_position()[1] > .15:
+            continue
+        original = text.get_text()
+        if '$' in original:
+            continue
+        lines = []
+        for line in original.split('\n'):
+            extent = measure.get_text_width_height_descent(line, text.get_fontproperties(), False)[0]
+            if extent <= width or not line:
+                lines.append(line)
+                continue
+            chars = max(10, int(len(line)*width/extent)-2)
+            lines.extend(textwrap.wrap(line, width=chars, break_long_words=True, break_on_hyphens=False))
+        text.set_text('\n'.join(lines))
+    if title is not None and figure.axes and figure.get_layout_engine() is None:
+        height = figure.get_figheight()*72
+        lines = len(title.get_text().splitlines())
+        top = (title.get_position()[1]*height-lines*TITLE_PT*1.2-8)/height
+        positions = [ax.get_position() for ax in figure.axes]
+        low, high = min(p.y0 for p in positions), max(p.y1 for p in positions)
+        if low+.15 < top < high-.001:
+            ratio = (top-low)/(high-low)
+            for ax, p in zip(figure.axes, positions):
+                ax.set_position([p.x0, low+(p.y0-low)*ratio, p.width, p.height*ratio])
+
+
+def _install_export_style():
+    """Cover direct scientific-script exports as well as runner/GUI exports."""
+    from matplotlib.figure import Figure
+    if getattr(Figure.savefig, '_fixed_font_policy', False):
+        return
+    original = Figure.savefig
+
+    def savefig(figure, *args, **kwargs):
+        finish_figure(figure)
+        return original(figure, *args, **kwargs)
+
+    savefig._fixed_font_policy = True
+    Figure.savefig = savefig
 
 
 def direction_color(index: int) -> str:
@@ -95,3 +186,4 @@ def text_panel(ax, lines, fontsize=7.5):
 
 
 apply()
+_install_export_style()

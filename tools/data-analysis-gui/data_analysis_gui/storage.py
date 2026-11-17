@@ -71,9 +71,19 @@ def recording_sha(path) -> str:
             cache = {}
         cache[key] = value
         SHA_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = SHA_CACHE.with_suffix('.tmp')
-        tmp.write_text(json.dumps(cache, indent=1), encoding='utf-8')
-        tmp.replace(SHA_CACHE)
+        # Reports and cache importers can hash files in separate processes.
+        # A shared .tmp name races on Windows; each writer owns its temp file.
+        import tempfile,time
+        handle,name=tempfile.mkstemp(prefix='sha_cache_',suffix='.tmp',dir=SHA_CACHE.parent)
+        os.close(handle);tmp=Path(name)
+        try:
+            tmp.write_text(json.dumps(cache,indent=1),encoding='utf-8')
+            for attempt in range(20):
+                try:tmp.replace(SHA_CACHE);break
+                except PermissionError:
+                    if attempt==19:break  # Hash is valid even if the memo file is busy.
+                    time.sleep(.025)
+        finally:tmp.unlink(missing_ok=True)
     return value
 
 
@@ -149,6 +159,7 @@ def signature_inputs(section, recordings, criteria, params, layout_path='', *, c
         config_path = (day_config_path(recordings[0].path) if channel_config_path is None
                        else str(channel_config_path))
     inputs = dict(format=FORMAT_VERSION, section=section.id, version=section.version, mode=section.mode,
+                font_policy=dict(title_pt=18, axis_label_pt=14, tick_pt=11, schematics='preserve legacy style'),
                 code=source_digest(section_folder(section)),
                 recordings=[dict(name=r.path.name, sha256=recording_sha(r.path)) for r in recordings],
                 criteria=criteria.to_dict(), params={k: params[k] for k in sorted(params)},
@@ -183,10 +194,17 @@ def signature_inputs(section, recordings, criteria, params, layout_path='', *, c
     if section.id == 's14':
         depth_path = section.resolve_params(params)['depth_csv']
         inputs['channel_depth_csv'] = dict(path=depth_path, sha256=optional_digest(depth_path))
+    if section.id == 's15' and recordings:
+        from .sections.s15_task_replay_v1.replay import source_files
+        inputs['replay_sources'] = {key: dict(path=str(path), sha256=optional_digest(path))
+                                   for key, path in source_files(recordings[0]).items()}
+        inputs['replay_template'] = optional_digest(section_folder(section) / 'player.html')
     if section.id == 'x01':
         from .sections.x01_channel_stability_v1.section import config_candidates
         inputs['recording_configs'] = {path: optional_digest(path)
                                        for dated in config_candidates(recordings).values() for _, path in dated}
+        inputs['chip_layout_reference'] = dict(path=str(C.BGA_SHANK_PROJECTION),
+                                               sha256=optional_digest(C.BGA_SHANK_PROJECTION))
     if section.id in ('s13', 'x08'):
         from .core.behavior import source_files
         inputs['behavior_sources'] = [
@@ -391,8 +409,13 @@ def save_result(result, folder: Path, signature: str, inputs: dict, section, rec
         files = {}
         for ext in FIGURE_FORMATS:
             path = tmp / 'figures' / f'{stem}.{ext}'
-            fig.savefig(path, dpi=PNG_DPI if ext == 'png' else None,
-                        metadata={'Title': title} if ext in ('pdf', 'svg') else None)
+            reference = getattr(fig, '_reference_image_path', None)
+            if ext == 'png' and reference:
+                import shutil
+                shutil.copy2(reference, path)
+            else:
+                fig.savefig(path, dpi=PNG_DPI if ext == 'png' else None,
+                            metadata={'Title': title} if ext in ('pdf', 'svg') else None)
             files[ext] = f'figures/{path.name}'
         method = methods[i - 1] or ('Values extracted from the drawn artists; see section description. '
                                     'No explicit method text was provided for this figure.')
@@ -400,7 +423,8 @@ def save_result(result, folder: Path, signature: str, inputs: dict, section, rec
                   'columns: panel/panel_title = subplot; artist = line|scatter|bar|image|mesh|segment|band; '
                   'x,y = plotted coordinates (image/mesh: column,row); value = colour/bar value']
         path = tmp / 'figures' / f'{stem}.csv'
-        write_csv(path, extract_plot_data(fig), header)
+        # A supplied reference image has no measured pixel table to export.
+        write_csv(path, [] if getattr(fig, '_reference_image_path', None) else extract_plot_data(fig), header)
         files['csv'] = f'figures/{path.name}'
         data_files = {}
         for name, table in (explicit[i - 1] or {}).items():
@@ -438,6 +462,14 @@ def save_result(result, folder: Path, signature: str, inputs: dict, section, rec
             path = tmp / 'tables' / f'{slug(name, 60)}.csv'
             write_csv(path, rows, [f'table: {name}', *provenance])
             tables[name] = f'tables/{path.name}'
+    attachments = {}
+    for name, content in getattr(result, 'attachments', {}).items():
+        if not name or Path(name).name != name or name in ('.', '..') or '\\' in name:
+            raise ValueError(f'无效的附件文件名：{name}')
+        path = tmp / 'attachments' / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+        attachments[name] = f'attachments/{name}'
     from .sections.guide import load_guide
     guide = load_guide(section)
     if guide:
@@ -446,7 +478,7 @@ def save_result(result, folder: Path, signature: str, inputs: dict, section, rec
     record = dict(format=FORMAT_VERSION, signature=signature, inputs=inputs,
                   section=dict(id=section.id, version=section.version, title=section.title, mode=section.mode),
                   recordings=[r.label for r in recordings], summary=jsonable(result.summary),
-                  notes=list(result.notes), figures=figures, tables=tables, seconds=round(seconds, 2),
+                  notes=list(result.notes), figures=figures, tables=tables, attachments=attachments, seconds=round(seconds, 2),
                   created=_dt.datetime.now().isoformat(timespec='seconds'), digests=digests)
     (tmp / 'result.json').write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
     if folder.exists():

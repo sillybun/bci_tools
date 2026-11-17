@@ -2,13 +2,13 @@
 
 **一句话总结：**六张 hot_r 0–25 权重图沿用 S10 拟合；新增第七张图按整段录制的非零 code 通道统计深度分布。
 
-S14 独立选择 Ridge（默认）或 Velocity KF，自动继承 S10 的 bin、offset、until、sqrt 和模型训练参数。所有图默认下方 Elec# 1、上方 128，Shank 从左到右 1–8。文件名不加方向后缀。全量拟合用于描述模型敏感度，不是 held-out 性能评价。默认 per_SD：输入变化一个拟合标准差的敏感度；per_feature_unit：再除以拟合输入标准差，单位为每 Hz 或每 sqrt(Hz)。跨 run 应保持模型、参数、输入变换和权重单位一致。
+S14 独立选择 Ridge（默认）或 Velocity KF，自动继承 S10 的 bin、offset、until、sqrt 和模型训练参数。所有图默认下方 Elec# 0、上方 127，Shank 从左到右 1–8。文件名不加方向后缀。全量拟合用于描述模型敏感度，不是 held-out 性能评价。默认 per_SD：输入变化一个拟合标准差的敏感度；per_feature_unit：再除以拟合输入标准差，单位为每 Hz 或每 sqrt(Hz)。跨 run 应保持模型、参数、输入变换和权重单位一致。
 
 Ridge 取标准化特征的系数。KF 取稳态神经输入增益 K 乘训练速度尺度，不使用观测矩阵 C 充当解码权重。KF 协方差从 P=0 迭代至增益相对变化 ≤1e-10；实际 trial 初始阶段的瞬态增益不在固定图中。
 
 图和 CSV 的 vx、vy 均为绝对值。原始带符号系数另存 vx_signed、vy_signed。norm = sqrt(wx² + wy²)，取绝对值不改变 norm。灰色仅表示未传输；输入恒定而被剔除的通道权重为零，显示白色。其他非常数通道也可能有零或很小的权重，不能把白色统称为没有信息。
 
-Channel# 为 XDF 电极 ID 减一。Shank 为 1–8，Elec# 为 1–128，1 靠近 fan-in、128 靠近尖端。Elec# 是位置序号，没有植入方向与毫米深度标定时不能推断脑内解剖深度。
+Channel# 为 XDF 电极 ID 减一。Shank 为 1–8，Elec# 为 0–127，0 靠近 fan-in、127 靠近尖端。Elec# 是位置序号，没有植入方向与毫米深度标定时不能推断脑内解剖深度。
 
 ## 图 1：vx weighting heatmap
 

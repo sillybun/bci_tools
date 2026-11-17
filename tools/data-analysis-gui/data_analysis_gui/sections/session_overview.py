@@ -33,6 +33,7 @@ def session_overview(recordings, kind=None):
     # A separate row reserves space for the legend even after font scaling.
     columns = (len(styles) + 1) // 2
     fig = new_figure(max(14, 12 * columns, 4 + 1.12 * len(rows)), 11.2)
+    fig._preserve_schematic_fonts = True
     legend_ax, ax = fig.subplots(2, 1, gridspec_kw={'height_ratios': [2.2, 6]})
     legend_ax.axis('off')
     handles = [Line2D([], [], marker=marker, color=color, markersize=26, linestyle='none', label=name)

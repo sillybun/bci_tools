@@ -14,7 +14,7 @@ from data_analysis_gui.sections.s14_decoder_weights_v1.section import (
     SECTION, channel_rows, depth_rows, fit_weights, steady_gain)
 
 
-def write_layout(path, *, duplicate=False, shared=False):
+def write_layout(path, *, duplicate=False, shared=False, electrode_base=1):
     ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     workbook = f'<workbook xmlns="{ns}" xmlns:r="{rel}"><sheets><sheet name="shank" sheetId="1" r:id="rId1"/></sheets></workbook>'
@@ -26,7 +26,7 @@ def write_layout(path, *, duplicate=False, shared=False):
     for n in range(1024):
         # Channel identity deliberately disagrees with both row and position order.
         ch = (n * 17 + 4) % 1024
-        values = (ch if not duplicate or n != 1 else 4, n // 128 + 1, n % 128 + 1)
+        values = (ch if not duplicate or n != 1 else 4, n // 128 + 1, n % 128 + electrode_base)
         rows.append(f'<row r="{n+2}">' + ''.join(f'<c r="{c}{n+2}"><v>{v}</v></c>'
                                                       for c, v in zip('ABC', values)) + '</row>')
     with zipfile.ZipFile(path, 'w') as archive:
@@ -177,7 +177,7 @@ def test_all_six_plots_use_absolute_reversed_hot_0_25_without_position_groups(tm
             ax = fig.axes[0]
             im = ax.images[0]
             assert im.cmap.name == 'hot_r' and im.get_clim() == (0., 25.)
-            assert im.origin == 'lower' and ax.get_ylim() == (-.5, 127.5)
+            assert im.origin == 'lower' and ax.get_ylim() == (0, 127)
             def luminance(value):
                 return np.dot(im.cmap(im.norm(value))[:3], [.2126, .7152, .0722])
             assert luminance(0) > luminance(12.5) > luminance(25)
@@ -252,9 +252,17 @@ def test_shank1_depth_offset_preserves_latest_mapping_order(tmp_path):
     positions=read_layout()['position']
     for ch,d in depths.items():
         assert d['shank']==int(positions[ch,1])+1
-        assert d['elec_index']==int(positions[ch,0])+1
+        assert d['elec_index']==int(positions[ch,0])
         assert d['depth_offset_um']==(106850 if d['shank']==1 else 0)
         assert d['depth_um']==d['depth_original_um']+d['depth_offset_um']
     shank1=[ch for ch,d in depths.items() if d['shank']==1]
     bins,rows=distribution([ch+1 for ch in shank1],[3]*128,depths,100)
     assert len(rows)==128 and sum(r['single_unit_count'] for r in bins)==128
+
+
+def test_layout_numbering_bases_preserve_physical_positions(tmp_path):
+    a = read_layout(write_layout(tmp_path/'zero.xlsx', electrode_base=0))
+    b = read_layout(write_layout(tmp_path/'one.xlsx', electrode_base=1))
+    np.testing.assert_array_equal(a['position'], b['position'])
+    assert a['electrode_index_base'] == 0 and b['electrode_index_base'] == 1
+    assert '127 tip' in a['row_label']

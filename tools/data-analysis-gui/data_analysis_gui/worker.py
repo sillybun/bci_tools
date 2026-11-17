@@ -25,7 +25,7 @@ from .core.style import DEFAULT_FONT_PERCENT
 from .runner import build_context, run_section
 from .sections import registry, versions
 from .session_cache import SessionCache
-from . import storage
+from . import config as C, storage
 
 
 def emit(event, **values):
@@ -43,7 +43,12 @@ def plan(request) -> tuple[list[dict], list[dict]]:
     """Resolve each job independently and retain errors with their task IDs."""
     root = Path(request.get('data_root') or '.')
     criteria = TrialFilter.from_dict(request.get('criteria'))
+    layout_path = str(C.DEFAULT_LAYOUT_XLSX) if request.get('report') and C.DEFAULT_LAYOUT_XLSX.is_file() else request.get('layout_path', '')
     out, errors = [], []
+    pool=None
+    if request.get('report_run_pool_root'):
+        from .report_run_pool import RunPool
+        pool=RunPool(request['report_run_pool_root'])
     for job in request['jobs']:
         task = job['section'] + ':' + '+'.join(Path(p).name for p in job['recordings'])
         try:
@@ -55,11 +60,19 @@ def plan(request) -> tuple[list[dict], list[dict]]:
                 config = job['channel_config_path'] if 'channel_config_path' in job else recordings[0].channel_config
                 if config and not Path(config).is_file():
                     raise ValueError(f'通道配置文件不存在：{config}')
-            inputs = storage.signature_inputs(section, recordings, criteria, params, request.get('layout_path', ''),
+            inputs = storage.signature_inputs(section, recordings, criteria, params, layout_path,
                                               channel_config_path=config,
                                               font_percent=request.get('font_percent', DEFAULT_FONT_PERCENT))
             signature = storage.fingerprint(inputs)
             folder = storage.result_folder(request['output_root'], section, recordings, signature)
+            if pool and section.mode=='single' and not request.get('recompute') and not (folder/'result.json').is_file():
+                folder=pool.lookup('section_'+section.id,job['recordings'][0],dict(signature=signature)) or folder
+            if request.get('report_summary_only') and section.mode=='single' and not (folder/'result.json').is_file():
+                inputs['figure_export']='tables_only'
+                signature=storage.fingerprint(inputs)
+                folder=storage.result_folder(request['output_root'],section,recordings,signature)
+                if pool and not request.get('recompute') and not (folder/'result.json').is_file():
+                    folder=pool.lookup('section_'+section.id,job['recordings'][0],dict(signature=signature)) or folder
             out.append(dict(section=section, recordings=recordings, params=params, inputs=inputs,
                             signature=signature, folder=folder, criteria=criteria, task=task,
                             channel_config_path=config))
@@ -119,6 +132,9 @@ def run_jobs(request, send=None) -> int:
                                 artifacts=artifacts)
             ctx.params = job['params']
             result = run_section(section, ctx, font_percent=job['inputs']['font_percent'])
+            if job['inputs'].get('figure_export')=='tables_only':
+                for _,figure in result.figures:figure.clear()
+                result.figures=[];result.methods=[];result.figure_data=[]
             send('message', task=job['task'], message=(f'Session 中间结果：复用 {artifacts.hits - hits} 项，'
                                                        f'计算 {artifacts.misses - misses} 项'))
             send('message', task=job['task'], message='保存 PNG / SVG / PDF / CSV')

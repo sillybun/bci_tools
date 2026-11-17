@@ -30,6 +30,8 @@ def source_files(recording):
     root = folder.parent if folder.name.lower() == 'xdf' else folder
     trials = root / 'behavior' / 'trials.csv'
     if not trials.is_file():
+        trials = root / 'trials.csv'
+    if not trials.is_file():
         return {}
     recordings = [*root.glob('*.xdf'), *(root / 'xdf').glob('*.xdf')]
     if len(recordings) != 1 or recordings[0].resolve() != recording.path.resolve():
@@ -52,6 +54,8 @@ def source_files(recording):
             files.update({f'log_{i}': path for i, path in enumerate(logs)})
         elif (root / 'logs' / 'cursor_tasks_app.log').is_file():
             files['log_0'] = root / 'logs' / 'cursor_tasks_app.log'
+        elif (root / 'logs' / 'task.log').is_file():
+            files['log_0'] = root / 'logs' / 'task.log'
     return files
 
 

@@ -19,6 +19,7 @@ def source_files(recording):
     root = files['trials'].parent
     root = root.parent if root.name == 'behavior' else root
     for key, candidates in [('task_config', ['task_config.json','config/task_config.json']),
+                            ('rolling_metrics', ['rolling_metrics.csv','behavior/rolling_metrics.csv']),
                             ('task_log', ['logs/task.log','logs/cursor_tasks_app.log'])]:
         for relative in candidates:
             path = root / relative
@@ -173,7 +174,25 @@ def build_payload(session, params, check_cancel=lambda: None):
     if np.any(dt > max_gap):
         notes.append(f'{int((dt > max_gap).sum())} 处 cursor 采样间隔超过 {max_gap:g} 秒；间隔内标记缺失，不插值跨越。')
     notes.extend(['目标外观按保存配置重建；未记录的视觉特效、辅助提示和奖励动画不作精确复现。'])
+    from .clips import replay_clips, CLIP_IDS
+    clips, peak = replay_clips(files, cursor, times, events, geo, session.task_mode)
+    from .recorded_bps import read_recorded_bps
+    recorded_bps = read_recorded_bps(files, session.task_mode)
+    notes.append('画面BPS为当前trial在rolling_metrics.csv中保存的结果值（包括回放开始前的窗口历史）；不重新计算、不从片段起点累计，缺失时显示N/A。该保存文件使用原任务滚动时间，与S13累积active-time窗口不同。')
+    initial_clip = CLIP_IDS.get(params.get('replay_range','全程'),'full')
+    selected = next(c for c in clips if c['id']==initial_clip)
+    if not selected['available']:
+        raise ValueError(selected['reason'])
+    if peak:
+        notes.append('最高BPS60秒使用原始时间轴上的连续60秒，包含ITI/反馈/暂停；优先使用任务保存的 achieved_bitrate_bps；与S13累积活动时间60秒口径不同。并列取最早窗口。')
+        if clips[2]['clipped']:
+            notes.append(f'最高60秒的前后扩展触及录制边界，实际可回放 {clips[2]["end"]-clips[2]["start"]:.2f} 秒；不补造缺失轨迹。')
+        if peak.get('whole_task_saved_peak_bps',peak['bps']) > peak['bps']+1e-8:
+            notes.append('任务全段更高的保存BPS窗口不完全在本份XDF范围内；当前选取完全可回放窗口中的最高值。')
     return dict(format='cursortasks-replay-v1', label=session.label, task_mode=session.task_mode,
+                clips=clips,initial_clip=initial_clip,bps_peak=peak,
+                recorded_bps=recorded_bps,
+                transition_max_distance=geo['cell_size'] if session.task_mode=='grid' else 0.,
                 velocity_source=velocity_source,
                 columns=columns, frames=frames, trials=trials, events=events, geometry=geo,
                 duration=float(relative[-1]), max_gap=max_gap, tail_seconds=float(params.get('tail_seconds', 1)),
@@ -198,8 +217,12 @@ def sample_at(payload, elapsed):
         following = frames[i+1]
         delta = following[0]-state[0]
         gap = delta > payload['max_gap'] and elapsed > state[0] + 1e-6
-        continuous = (state[7:10] == following[7:10] and state[9] == 1 and not gap
-                      and delta <= payload['max_gap'])
+        same_trial = state[7:10] == following[7:10] and state[9] == 1
+        short_transition = (payload.get('task_mode')=='grid' and state[7]==following[7]
+                            and state[8]!=following[8] and state[9]==following[9]==1
+                            and np.hypot(following[1]-state[1],following[2]-state[2])
+                            <= payload.get('transition_max_distance',0.))
+        continuous = (same_trial or short_transition) and not gap and delta <= payload['max_gap']
         if continuous:
             fraction = (elapsed-state[0])/delta
             state[1] += (following[1]-state[1])*fraction
@@ -211,25 +234,34 @@ class PlaybackClock:
     """Elapsed time follows monotonic wall time, independent of UI frame count."""
     def __init__(self, duration, now=time.perf_counter):
         self.duration, self.now = duration, now
+        self.start, self.end = 0., duration
         self.offset, self.rate, self.playing, self.anchor = 0., 1., False, now()
 
     def position(self):
         value = self.offset + ((self.now()-self.anchor)*self.rate if self.playing else 0)
-        return min(self.duration, max(0., value))
+        return min(self.end, max(self.start, value))
 
     def pause(self):
         self.offset = self.position()
         self.playing = False
 
     def play(self):
-        if self.position() >= self.duration:
-            self.offset = 0.
+        if self.position() >= self.end:
+            self.offset = self.start
         self.anchor = self.now()
         self.playing = True
 
     def seek(self, value):
-        self.offset = min(self.duration, max(0., float(value)))
+        self.offset = min(self.end, max(self.start, float(value)))
         self.anchor = self.now()
+
+    def set_range(self, start, end):
+        start, end = float(start), float(end)
+        if not (0 <= start < end <= self.duration):
+            raise ValueError('回放时间范围无效')
+        self.pause()
+        self.start, self.end = start, end
+        self.seek(start)
 
     def speed(self, rate):
         rate = float(rate)

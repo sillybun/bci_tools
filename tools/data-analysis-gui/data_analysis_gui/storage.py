@@ -212,6 +212,8 @@ def signature_inputs(section, recordings, criteria, params, layout_path='', *, c
              for key, path in source_files(recording).items()}
             for recording in recordings if recording.online
         ]
+    if hasattr(section, 'extra_signature_inputs'):
+        inputs['extra_sources'] = section.extra_signature_inputs(recordings, params)
     return inputs
 
 
@@ -468,7 +470,10 @@ def save_result(result, folder: Path, signature: str, inputs: dict, section, rec
             raise ValueError(f'无效的附件文件名：{name}')
         path = tmp / 'attachments' / name
         path.parent.mkdir(exist_ok=True)
-        path.write_text(content, encoding='utf-8')
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding='utf-8')
         attachments[name] = f'attachments/{name}'
     from .sections.guide import load_guide
     guide = load_guide(section)

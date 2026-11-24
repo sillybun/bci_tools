@@ -287,7 +287,9 @@ def assemble_report(report, entries, failures, font_percent, send):
         manifest['offline_behavior'] = render_offline_behavior(work, report.get('offline_behavior_folders', []), font_percent, send,include_runs=include_runs,pool=pool)
         manifest['online_behavior'] = render_offline_behavior(work, report.get('online_behavior_folders', []), font_percent, send, online=True,include_runs=include_runs,pool=pool)
         from .report_bga import render_daily_bga
-        manifest['bga_daily'] = (render_daily_bga(work,report,font_percent,send,pool=pool) if include_runs else dict(days=[],skipped='Per-run exports disabled'))
+        manifest['bga_daily'] = render_daily_bga(work,report,font_percent,send,pool=pool)
+        from .control_comparison import render_comparison
+        manifest['control_comparison'] = render_comparison(work,report,font_percent,send,pool)
         manifest['complete'] = not failures
     except Exception as exc:
         failures.append(dict(stage='report assembly', message=str(exc)))

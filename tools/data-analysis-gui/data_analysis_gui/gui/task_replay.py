@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ..sections.s15_task_replay_v1.replay import PlaybackClock, sample_at
+from ..sections.s15_task_replay_v1.recorded_bps import bps_for_state
 from .widgets import open_path
 
 
@@ -14,6 +15,14 @@ class ReplayView(ttk.Frame):
         self.data, self.clock = payload, PlaybackClock(payload['duration'])
         self._timer, self._seeking = None, False
         self.event_times = [e[0] for e in payload['events']]
+        self.clips=payload.get('clips') or [dict(id='full',label='全程',start=0.,end=payload['duration'],available=True)]
+        rangebar=ttk.Frame(self,padding=6);rangebar.pack(fill='x')
+        ttk.Label(rangebar,text='回放片段：').pack(side='left')
+        self.range_choice=ttk.Combobox(rangebar,state='readonly',width=24,values=[c['label'] for c in self.clips])
+        self.range_choice.pack(side='left')
+        self.range_choice.bind('<<ComboboxSelected>>',lambda e:self.select_clip(self.range_choice.current()))
+        self.range_info=tk.StringVar()
+        ttk.Label(rangebar,textvariable=self.range_info).pack(side='left',padx=8)
         nav = ttk.Frame(self, padding=6);nav.pack(fill='x')
         self.play_button = ttk.Button(nav, text='▶ 播放', command=self.toggle)
         self.play_button.pack(side='left')
@@ -31,8 +40,9 @@ class ReplayView(ttk.Frame):
                           values=[f'Block {t["block"]} / Trial {t["trial"]}' for t in payload['trials']])
         trial.set('跳转 trial');trial.pack(side='left')
         self.trial_choice=trial
+        self.active_trials=payload['trials']
         self.trial_times=[t['time'] for t in payload['trials']]
-        trial.bind('<<ComboboxSelected>>',lambda e:self.seek(payload['trials'][trial.current()]['time']))
+        trial.bind('<<ComboboxSelected>>',lambda e:self.seek(self.active_trials[trial.current()]['time']))
         self.tail=tk.BooleanVar(value=True);self.arrow=tk.BooleanVar(value=True)
         ttk.Checkbutton(options,text='轨迹尾迹',variable=self.tail,command=self.draw).pack(side='left',padx=10)
         ttk.Checkbutton(options,text='速度箭头',variable=self.arrow,command=self.draw).pack(side='left')
@@ -40,12 +50,36 @@ class ReplayView(ttk.Frame):
         self.slider=ttk.Scale(self,from_=0,to=payload['duration'],variable=self.position,command=self.scrub)
         self.slider.pack(fill='x',padx=8,pady=5)
         self.status=tk.StringVar();ttk.Label(self,textvariable=self.status,padding=6).pack(fill='x')
+        self.bps_status=tk.StringVar(value='该 trial 记录 BPS：N/A')
+        ttk.Label(self,textvariable=self.bps_status,padding=(6,4),font=('Microsoft YaHei UI',14,'bold')).pack(fill='x')
         self.canvas=tk.Canvas(self,background='#080b10',highlightthickness=0)
         self.canvas.pack(fill='both',expand=True)
         self.canvas.bind('<Configure>',lambda e:self.draw())
         self.canvas.bind('<Unmap>',lambda e:self.pause())
         self.bind('<Destroy>',self.destroyed,add='+')
-        self._timer=self.after(33,self.tick)
+        initial=payload.get('initial_clip','full')
+        self.select_clip(next((i for i,c in enumerate(self.clips) if c['id']==initial),0))
+        self._timer=self.after(16,self.tick)
+
+    def select_clip(self,index):
+        clip=self.clips[index]
+        if not clip['available']:
+            self.range_info.set(clip.get('reason','片段不可用'))
+            self.range_choice.current(getattr(self,'clip_index',0));return
+        self.clip_index=index
+        self.pause();self.clock.set_range(clip['start'],clip['end'])
+        self.range_choice.current(index)
+        self._seeking=True
+        self.slider.configure(from_=clip['start'],to=clip['end'])
+        self.position.set(clip['start']);self._seeking=False
+        self.active_trials=[t for t in self.data['trials'] if clip['start']<=t['time']<=clip['end']]
+        self.trial_times=[t['time'] for t in self.active_trials]
+        self.trial_choice.configure(values=[f'Block {t["block"]} / Trial {t["trial"]}' for t in self.active_trials])
+        self.trial_choice.set('跳转 trial')
+        info=f'原记录 {clip["start"]:.2f}–{clip["end"]:.2f} s · 时长 {clip["end"]-clip["start"]:.2f} s'
+        if 'bps' in clip:info+=f' · Peak {clip["bps"]:.3f} bits/s'
+        if clip.get('clipped'):info+=' · 录制边界截断'
+        self.range_info.set(info);self.draw()
 
     def destroyed(self,event):
         if event.widget is self and self._timer is not None:
@@ -60,7 +94,7 @@ class ReplayView(ttk.Frame):
         self.draw()
 
     def reset(self):
-        self.pause();self.seek(0)
+        self.pause();self.seek(self.clock.start)
 
     def seek(self,value):
         self.clock.seek(value);self.draw()
@@ -70,19 +104,21 @@ class ReplayView(ttk.Frame):
 
     def jump(self,direction):
         t=self.clock.position()
-        choices=[v['time'] for v in self.data['trials'] if (v['time']>t+.001 if direction>0 else v['time']<t-.001)]
+        choices=[v['time'] for v in self.active_trials if (v['time']>t+.001 if direction>0 else v['time']<t-.001)]
         if choices:self.seek(choices[0] if direction>0 else choices[-1])
 
     def tick(self):
         if self.winfo_ismapped():self.draw()
-        self._timer=self.after(33,self.tick)
+        self._timer=self.after(16,self.tick)
 
     def draw(self):
         c=self.canvas;w,h=c.winfo_width(),c.winfo_height()
         if min(w,h)<10:return
         d=self.data;g=d['geometry'];t=self.clock.position();i,s,gap=sample_at(d,t)
+        bps=bps_for_state(d,s)
+        self.bps_status.set('该 trial 记录 BPS：'+('N/A' if bps is None else f'{bps:.3f} bits/s')+' · 原任务保存值')
         self._seeking=True;self.position.set(t);self._seeking=False
-        if self.clock.playing and t>=d['duration']:self.pause()
+        if self.clock.playing and t>=self.clock.end:self.pause()
         def number(v):return 'N/A' if gap or v is None else f'{v:.1f}'
         trial_index=bisect_right(self.trial_times,t)-1
         if s[9] and trial_index>=0:self.trial_choice.current(trial_index)
@@ -90,7 +126,7 @@ class ReplayView(ttk.Frame):
         speed=None if s[3] is None or s[4] is None else math.hypot(s[3],s[4])
         event_index=bisect_right(self.event_times,t)-1
         event=d['events'][event_index][1] if event_index>=0 else ''
-        self.status.set(f'{t:.2f} / {d["duration"]:.2f} s · {self.clock.rate:g}× · '
+        self.status.set(f'片段 {t-self.clock.start:.2f} / {self.clock.end-self.clock.start:.2f} s · 原记录 {t:.2f} s · {self.clock.rate:g}× · '
                         f'Block {s[7]:g} / Trial {s[8]:g} · {"任务中" if s[9] else "间隔"}'
                         f'{" · 采样缺口" if gap else ""}\n'
                         f'位置 ({number(s[1])}, {number(s[2])}) px · '
@@ -115,9 +151,9 @@ class ReplayView(ttk.Frame):
             shape(*xy(s[5]-size/2,s[6]+size/2),*xy(s[5]+size/2,s[6]-size/2),fill='#da4b4b',outline='')
         if self.tail.get():
             f=d['frames'];j=i
-            while (j>0 and f[j][0]>t-d['tail_seconds'] and f[j-1][7:10]==s[7:10]
+            while (j>0 and f[j][0]>max(self.clock.start,t-d['tail_seconds']) and f[j-1][7:10]==s[7:10]
                    and f[j][0]-f[j-1][0]<=d['max_gap']):j-=1
-            points=[coord for r in f[j:i+1] for coord in xy(r[1],r[2])]+list(xy(s[1],s[2]))
+            points=[coord for r in f[j:i+1] if r[0]>=self.clock.start for coord in xy(r[1],r[2])]+list(xy(s[1],s[2]))
             if len(points)>=4:c.create_line(*points,fill='#44b9d1',width=2)
         r=g['cursor_radius'];c.create_oval(*xy(s[1]-r,s[2]+r),*xy(s[1]+r,s[2]-r),fill='#f5e45e',outline='')
         if self.arrow.get() and speed is not None and speed>1e-9:

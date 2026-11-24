@@ -5,13 +5,15 @@ import numpy as np
 
 from ..base import Section, SectionResult, Param, new_figure
 from .replay import build_payload
+from .clips import CLIP_CHOICES
 
 
 class TaskReplay(Section):
     id = 's15'
     title = '任务回放'
     description = '按保存的 cursor 位置、速度、目标和时间戳回放 CO8 / Grid 任务；默认 1× 实时，支持暂停、倍速、进度和 trial 跳转。'
-    params = (Param('velocity_source', '速度来源', 'choice', '自动', ('自动','保存速度','位置差分')),
+    params = (Param('replay_range', '回放片段', 'choice', '全程', CLIP_CHOICES),
+              Param('velocity_source', '速度来源', 'choice', '自动', ('自动','保存速度','位置差分')),
               Param('tail_seconds', '尾迹时长 (s)', default=1., minimum=0, maximum=10),
               Param('max_gap', '采样缺口阈值 (s)', default=.25, minimum=.02, maximum=10))
 
@@ -26,6 +28,10 @@ class TaskReplay(Section):
         encoded = json.dumps(payload, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
         template = Path(__file__).with_name('player.html').read_text(encoding='utf-8')
         result = SectionResult(summary=dict(recording=ctx.session.label, velocity_source=payload['velocity_source'], **payload['stats']), notes=payload['notes'])
+        result.summary['bps_peak'] = payload['bps_peak']
+        result.summary['recorded_bps_trials'] = len(payload['recorded_bps']['trials'])
+        result.tables['recorded_trial_bps'] = payload['recorded_bps']['trials']
+        result.tables['replay_clips'] = payload['clips']
         result.attachments = {'task_replay.json':encoded,
                               'task_replay.html':template.replace('__REPLAY_PAYLOAD__', encoded.replace('</', '<\\/'))}
         frames = np.asarray([[np.nan if v is None else v for v in r] for r in payload['frames']])
@@ -44,7 +50,7 @@ class TaskReplay(Section):
         velocity.set(xlabel='Time (s)',ylabel='Speed (px/s)',title='Cursor velocity')
         fig.suptitle('Task Replay Overview')
         result.add_figure('Task replay overview',fig,
-                          method='All loaded cursor_state frames; original timestamps. Recorded xy is replayed without reintegrating velocity. Trial transitions and sampling gaps are not interpolated. Velocity source: '+payload['velocity_source']+'. The task config/log controls geometry when uniquely assigned to this recording.',
+                          method='All loaded cursor_state frames; original timestamps. Recorded xy is replayed without reintegrating velocity. Static paths separate trials. Interactive Grid playback interpolates short position-continuous transitions; resets and long gaps are not interpolated. BPS is read by trial identity from saved rolling_metrics.csv without recomputation. Velocity source: '+payload['velocity_source']+'. The task config/log controls geometry when uniquely assigned to this recording.',
                           data={'trajectory':{'time_s':frames[:,0],'x':xy[:,0],'y':xy[:,1],'speed_px_s':plotted_speed}})
         result.tables['trial_starts']=payload['trials']
         result.tables['replay_sources']=[dict(kind=k,path=v) for k,v in payload['sources'].items()]

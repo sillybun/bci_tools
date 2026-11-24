@@ -1,4 +1,4 @@
-"""Daily chip status on workbook BGA coordinates, using the day's first run only."""
+"""Daily chip status from the first run with usable XDF neural data."""
 from pathlib import Path
 import json,re
 import numpy as np
@@ -15,6 +15,33 @@ SHANK_COLORS=('#FF5722','#8BC34A','#00BCD4','#F44336','#9C27B0','#FF9800','#4CAF
 def first_run(day):
     candidates=[p for p in Path(day).iterdir() if p.is_dir() and RUN_PREFIX.match(p.name)]
     return min(candidates,key=lambda p:(int(RUN_PREFIX.match(p.name)['number']),RUN_PREFIX.match(p.name)['part'] or '',p.name)) if candidates else None
+
+
+def first_usable_run(day,pool=None):
+    """Skip missing/broken recordings, retaining actual run identity and cache reuse."""
+    candidates=sorted((p for p in Path(day).iterdir() if p.is_dir() and RUN_PREFIX.match(p.name)),
+        key=lambda p:(int(RUN_PREFIX.match(p.name)['number']),RUN_PREFIX.match(p.name)['part'] or '',p.name))
+    skipped=[];first_unavailable=None
+    def load(folder):
+        if pool:
+            def build(staged):
+                values,info=first_run_status(folder)
+                return dict(values=values.tolist(),info=info)
+            data,bundle,_=pool.get('BGA_data',folder or day,bga_data_inputs(folder),build)
+            return np.asarray(data['values'],float),data['info'],bundle
+        values,info=first_run_status(folder)
+        return values,info,None
+    for folder in candidates:
+        if not any(folder.rglob('*.xdf')):
+            skipped.append(dict(run_folder=str(folder),status='no_xdf'));continue
+        values,info,bundle=load(folder)
+        if np.isfinite(values).any():return folder,values,info,bundle,skipped
+        skipped.append(dict(run_folder=str(folder),status=info['status'],notes=info['notes']))
+        if first_unavailable is None:first_unavailable=(folder,values,info,bundle)
+    if first_unavailable is not None:return (*first_unavailable,skipped)
+    folder=candidates[0] if candidates else None
+    values,info,bundle=load(folder)
+    return folder,values,info,bundle,skipped
 
 def first_run_status(folder):
     values=np.full(1024,np.nan);sources=[]
@@ -67,7 +94,7 @@ def bga_figure(layout,values,date,run,status):
         ('#BFC4CA',f'{missing_label} ({int((~observed).sum())})'))]
     fig.legend(handles=handles,ncol=5,frameon=False,loc='lower center',bbox_to_anchor=(.54,.015),handletextpad=.4,columnspacing=1.4,fontsize=10,labelcolor='#17212B')
     if status not in ('ok','partial_xdf_coverage'):
-        fig.text(.5,.003,'No usable neural data in this first run; later runs were not substituted.',ha='center',fontsize=8,color='#17212B')
+        fig.text(.5,.003,'No usable XDF neural data found in any run of this day.',ha='center',fontsize=8,color='#17212B')
     fig.subplots_adjust(left=.075,right=.985,top=.91,bottom=.11)
     from matplotlib.text import Text
     for text in fig.findobj(Text):text.set_fontfamily('DejaVu Sans')
@@ -88,17 +115,10 @@ def render_daily_bga(work,report,font_percent=100,send=lambda *a,**k:None,*,pool
     paths += [r['folder'] for key in ('offline_behavior','online_behavior') for r in report.get(key,{}).get('runs',[])]
     days={day_folder(Path(p)) for p in paths};days={p for p in days if p and p.name.replace('-','') not in excluded}
     out=Path(work)/'02_通道稳定性分析'/'BGA_daily_first_run';out.mkdir(parents=True,exist_ok=True)
-    result=dict(layout_path=layout['source'],layout_sha256=storage.file_digest(layout['source']),style_reference=str(C.BGA_SHANK_PROJECTION.parent/'bga_shanks/BGA_20261111_run006_status.png'),color_policy='Any nonzero code: solid Shank color; observed all-zero: black; untransmitted: #BFC4CA. No colored outlines.',policy='First chronological run ID in each selected day; no fallback to later runs; only first-run XDFs used. Entire received spike stream, independent of task-marker availability.',excluded_dates=sorted(excluded),days=[])
+    result=dict(layout_path=layout['source'],layout_sha256=storage.file_digest(layout['source']),style_reference=str(C.BGA_SHANK_PROJECTION.parent/'bga_shanks/BGA_20261111_run006_status.png'),color_policy='Any nonzero code: solid Shank color; observed all-zero: black; untransmitted: #BFC4CA. No colored outlines.',policy='First run in run-ID order with usable XDF spike data in each selected day. Skip runs without XDF or readable spike data; record selected run and skipped candidates. Entire received spike stream, independent of task-marker availability.',excluded_dates=sorted(excluded),days=[])
     for day in sorted(days):
-        folder=first_run(day)
-        if pool:
-            from .report_run_pool import dependencies
-            def compute_data(staged):
-                values,info=first_run_status(folder)
-                return dict(values=values.tolist(),info=info)
-            cached,data_folder,data_hit=pool.get('BGA_data',folder or day,bga_data_inputs(folder),compute_data)
-            values=np.asarray(cached['values'],float);info=cached['info']
-        else:values,info=first_run_status(folder)
+        folder,values,info,data_folder,skipped=first_usable_run(day,pool)
+        if pool:from .report_run_pool import dependencies
         date=day.name;run=folder.name if folder else 'No run folder';stem=out/f'BGA_{date}_first_run'
         def draw(staged):
             target=staged/stem.name
@@ -113,7 +133,7 @@ def render_daily_bga(work,report,font_percent=100,send=lambda *a,**k:None,*,pool
             pool.publish(bundle,out)
             send('message',message=f'BGA {"缓存复用" if hit else "首次生成"}: {date} {run}')
         else:draw(out)
-        result['days'].append(dict(date=date,**info,transmitted_channels=int(np.isfinite(values).sum()),files={ext:str(stem.with_suffix('.'+ext).relative_to(work)) for ext in ('png','pdf','svg','csv')}))
+        result['days'].append(dict(date=date,**info,skipped_candidates=skipped,transmitted_channels=int(np.isfinite(values).sum()),files={ext:str(stem.with_suffix('.'+ext).relative_to(work)) for ext in ('png','pdf','svg','csv')}))
         send('message',message=f'BGA first run: {date} {run}, {info["status"]}')
     (Path(work)/'bga_daily_manifest.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     return result

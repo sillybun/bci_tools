@@ -81,7 +81,7 @@ def run_section(section: Section, ctx: AnalysisContext, *, font_percent=DEFAULT_
         note = getattr(session, 'header', {}).get('analysis_window_note')
         if note:
             result.notes.append(f'{session.label}：{note}')
-    if section.mode == 'cross' and section.id not in ('x00', 'x08', 'x09'):
+    if section.mode == 'cross' and section.id not in ('x00', 'x08', 'x09', 'x10'):
         from .sections.session_overview import METHOD, TITLE, session_overview
         excluded = set(result.summary.get('excluded_dates', ()))
         figure, rows = session_overview(s.recording for s in ctx.sessions if s.recording.date not in excluded)

@@ -6,43 +6,52 @@ body{margin:0;background:#101722;color:#e5edf5;font:15px system-ui}main{max-widt
 'use strict';
 const D=JSON.parse(document.getElementById('payload').textContent), F=D.frames, G=D.geometry;
 const $=id=>document.getElementById(id), canvas=$('scene'), ctx=canvas.getContext('2d');
+const bpsLookup=new Map((D.recorded_bps?.trials||[]).map(r=>[`${r.block}:${r.trial}`,r.value]));
+const bpsPanel=document.createElement('div');bpsPanel.id='recordedBps';bpsPanel.style.cssText='font-size:24px;font-weight:650;color:#8ee6ba;margin:8px 0';canvas.before(bpsPanel);
+const clips=D.clips||[{id:'full',label:'全程',start:0,end:D.duration,available:true}];
+const rangebar=document.createElement('nav');rangebar.style.margin='12px 0';rangebar.innerHTML='<label>回放片段 <select id="clip" aria-label="回放片段"></select></label><span id="clipInfo"></span>';$('title').after(rangebar);
+for(const c of clips){const o=document.createElement('option');o.value=c.id;o.textContent=c.label+(c.available?'':'（不可用）');o.disabled=!c.available;$('clip').append(o);}
 $('title').textContent=D.label+' · 任务回放'; $('seek').max=D.duration;
 for(const note of D.notes){const li=document.createElement('li');li.textContent=note;$('notes').append(li);}
 const placeholder=document.createElement('option');placeholder.textContent='跳转 trial';placeholder.value='';$('trials').append(placeholder);
 for(const t of D.trials){const o=document.createElement('option');o.value=t.time;o.textContent=`Block ${t.block} / Trial ${t.trial}`;$('trials').append(o);}
-let offset=0, anchor=performance.now(), rate=1, playing=false;
-function position(){return Math.max(0,Math.min(D.duration,offset+(playing?(performance.now()-anchor)/1000*rate:0)));}
-function seek(t){offset=Math.max(0,Math.min(D.duration,Number(t)));anchor=performance.now();draw();}
+let offset=0, anchor=performance.now(), rate=1, playing=false,rangeStart=0,rangeEnd=D.duration,visibleTrials=D.trials;
+function position(){return Math.max(rangeStart,Math.min(rangeEnd,offset+(playing?(performance.now()-anchor)/1000*rate:0)));}
+function seek(t){offset=Math.max(rangeStart,Math.min(rangeEnd,Number(t)));anchor=performance.now();draw();}
 function pause(){offset=position();playing=false;$('play').textContent='▶ 播放';}
-$('play').onclick=()=>{if(playing)pause();else{if(position()>=D.duration)offset=0;anchor=performance.now();playing=true;$('play').textContent='❚❚ 暂停';}draw();};
-$('reset').onclick=()=>{pause();seek(0);};$('seek').oninput=e=>seek(e.target.value);
+$('play').onclick=()=>{if(playing)pause();else{if(position()>=rangeEnd)offset=rangeStart;anchor=performance.now();playing=true;$('play').textContent='❚❚ 暂停';}draw();};
+$('reset').onclick=()=>{pause();seek(rangeStart);};$('seek').oninput=e=>seek(e.target.value);
 $('rate').onchange=e=>{seek(position());rate=Number(e.target.value);};
 $('trials').onchange=e=>{if(e.target.value!=='')seek(e.target.value);};
-function jump(delta){const t=position();const choices=D.trials.filter(v=>delta>0?v.time>t+.001:v.time<t-.001);if(choices.length)seek((delta>0?choices[0]:choices.at(-1)).time);}
+function jump(delta){const t=position();const choices=visibleTrials.filter(v=>delta>0?v.time>t+.001:v.time<t-.001);if(choices.length)seek((delta>0?choices[0]:choices.at(-1)).time);}
 $('prev').onclick=()=>jump(-1);$('next').onclick=()=>jump(1);
+function selectClip(id){const c=clips.find(c=>c.id===id&&c.available)||clips[0];pause();rangeStart=c.start;rangeEnd=c.end;$('clip').value=c.id;$('seek').min=rangeStart;$('seek').max=rangeEnd;visibleTrials=D.trials.filter(t=>t.time>=rangeStart&&t.time<=rangeEnd);$('trials').replaceChildren(placeholder);for(const t of visibleTrials){const o=document.createElement('option');o.value=t.time;o.textContent=`Block ${t.block} / Trial ${t.trial}`;$('trials').append(o);}$('clipInfo').textContent=`原记录 ${c.start.toFixed(2)}–${c.end.toFixed(2)} s · 时长 ${(c.end-c.start).toFixed(2)} s`+(c.bps===undefined?'':` · Peak ${c.bps.toFixed(3)} bits/s`)+(c.clipped?' · 录制边界截断':'');seek(rangeStart);}
+$('clip').onchange=e=>selectClip(e.target.value);
 function indexAt(t){let lo=0,hi=F.length;while(lo<hi){let m=(lo+hi)>>1;if(F[m][0]<=t)lo=m+1;else hi=m;}return Math.max(0,lo-1);}
-function stateAt(t){const i=indexAt(t),s=F[i].slice(),n=F[i+1];let gap=false;if(n){const dt=n[0]-s[0];gap=dt>D.max_gap&&t>s[0]+1e-6;if(!gap&&dt<=D.max_gap&&s[9]===1&&s[7]===n[7]&&s[8]===n[8]&&s[9]===n[9]){const u=(t-s[0])/dt;s[1]+=(n[1]-s[1])*u;s[2]+=(n[2]-s[2])*u;}}return {i,s,gap};}
+function stateAt(t){const i=indexAt(t),s=F[i].slice(),n=F[i+1];let gap=false;if(n){const dt=n[0]-s[0];gap=dt>D.max_gap&&t>s[0]+1e-6;const same=s[9]===1&&s[7]===n[7]&&s[8]===n[8]&&s[9]===n[9];const transition=D.task_mode==='grid'&&s[7]===n[7]&&s[8]!==n[8]&&s[9]===1&&n[9]===1&&Math.hypot(n[1]-s[1],n[2]-s[2])<=(D.transition_max_distance||0);if(!gap&&dt<=D.max_gap&&(same||transition)){const u=(t-s[0])/dt;s[1]+=(n[1]-s[1])*u;s[2]+=(n[2]-s[2])*u;}}return {i,s,gap};}
 function draw(){
  const box=canvas.getBoundingClientRect(), ratio=window.devicePixelRatio||1;
  const w=Math.max(1,box.width),h=Math.max(1,box.height);if(canvas.width!==Math.round(w*ratio)||canvas.height!==Math.round(h*ratio)){canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);}
  ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,w,h);
  const scale=Math.min((w-24)/G.width,(h-24)/G.height), X=x=>w/2+x*scale,Y=y=>h/2-y*scale;
  const t=position(),{i,s,gap}=stateAt(t);$('seek').value=t;
+ const recordedBps=bpsLookup.get(`${s[7]}:${s[8]}`);bpsPanel.textContent=`该 trial 记录 BPS：${recordedBps===undefined?'N/A':recordedBps.toFixed(3)+' bits/s'} · 原任务保存值`;
  const number=v=>gap||v===null?'N/A':v.toFixed(1);
- let trialIndex=-1;for(let j=D.trials.length-1;j>=0;j--)if(D.trials[j].time<=t){trialIndex=j;break;}
+ let trialIndex=-1;for(let j=visibleTrials.length-1;j>=0;j--)if(visibleTrials[j].time<=t){trialIndex=j;break;}
  $('trials').selectedIndex=s[9]&&trialIndex>=0?trialIndex+1:0;
  let event='';for(let j=D.events.length-1;j>=0;j--)if(D.events[j][0]<=t){event=D.events[j][1];break;}
- $('status').textContent=`${t.toFixed(2)} / ${D.duration.toFixed(2)} s  ·  ${rate}×  ·  Block ${s[7]} / Trial ${s[8]}  ·  ${s[9]?'任务中':'间隔'}${gap?'  ·  采样缺口':''}\n位置 (${number(s[1])}, ${number(s[2])}) px   ${D.velocity_source} (${number(s[3])}, ${number(s[4])}) px/s   |v| ${gap||s[3]===null||s[4]===null?'N/A':Math.hypot(s[3],s[4]).toFixed(1)} px/s   ${event}`;
+ $('status').textContent=`片段 ${(t-rangeStart).toFixed(2)} / ${(rangeEnd-rangeStart).toFixed(2)} s · 原记录 ${t.toFixed(2)} s  ·  ${rate}×  ·  Block ${s[7]} / Trial ${s[8]}  ·  ${s[9]?'任务中':'间隔'}${gap?'  ·  采样缺口':''}\n位置 (${number(s[1])}, ${number(s[2])}) px   ${D.velocity_source} (${number(s[3])}, ${number(s[4])}) px/s   |v| ${gap||s[3]===null||s[4]===null?'N/A':Math.hypot(s[3],s[4]).toFixed(1)} px/s   ${event}`;
  ctx.strokeStyle='#455269';ctx.strokeRect(X(-G.width/2),Y(G.height/2),G.width*scale,G.height*scale);
  if(D.task_mode==='grid'&&G.grid_rows&&G.grid_cols){const gw=G.grid_cols*G.cell_size,gh=G.grid_rows*G.cell_size;ctx.strokeStyle='#334154';ctx.lineWidth=1;ctx.beginPath();for(let c=0;c<=G.grid_cols;c++){ctx.moveTo(X(-gw/2+c*G.cell_size),Y(gh/2));ctx.lineTo(X(-gw/2+c*G.cell_size),Y(-gh/2));}for(let r=0;r<=G.grid_rows;r++){ctx.moveTo(X(-gw/2),Y(-gh/2+r*G.cell_size));ctx.lineTo(X(gw/2),Y(-gh/2+r*G.cell_size));}ctx.stroke();}
  if(D.task_mode==='centerout'){ctx.strokeStyle='#64748b';ctx.beginPath();ctx.arc(X(0),Y(0),G.target_size/2*scale,0,2*Math.PI);ctx.stroke();}
  if(!gap&&s[9]&&s[5]!==null&&s[6]!==null){ctx.fillStyle='#da4b4b';const size=(D.task_mode==='grid'?G.cell_size:G.target_size)*scale;if(G.target_shape==='circle'){ctx.beginPath();ctx.arc(X(s[5]),Y(s[6]),size/2,0,Math.PI*2);ctx.fill();}else ctx.fillRect(X(s[5])-size/2,Y(s[6])-size/2,size,size);}
- if(!gap&&$('tail').checked){ctx.strokeStyle='#44b9d1';ctx.lineWidth=2;ctx.beginPath();let j=i;while(j>0&&F[j][0]>t-D.tail_seconds&&F[j-1][7]===s[7]&&F[j-1][8]===s[8]&&F[j-1][9]===s[9]&&F[j][0]-F[j-1][0]<=D.max_gap)j--;ctx.moveTo(X(F[j][1]),Y(F[j][2]));for(;j<=i;j++)ctx.lineTo(X(F[j][1]),Y(F[j][2]));ctx.lineTo(X(s[1]),Y(s[2]));ctx.stroke();}
+ if(!gap&&$('tail').checked){ctx.strokeStyle='#44b9d1';ctx.lineWidth=2;ctx.beginPath();let j=i;while(j>0&&F[j][0]>Math.max(rangeStart,t-D.tail_seconds)&&F[j-1][7]===s[7]&&F[j-1][8]===s[8]&&F[j-1][9]===s[9]&&F[j][0]-F[j-1][0]<=D.max_gap)j--;while(j<=i&&F[j][0]<rangeStart)j++;ctx.moveTo(X(j<=i?F[j][1]:s[1]),Y(j<=i?F[j][2]:s[2]));for(;j<=i;j++)ctx.lineTo(X(F[j][1]),Y(F[j][2]));ctx.lineTo(X(s[1]),Y(s[2]));ctx.stroke();}
  if(!gap){ctx.fillStyle='#f5e45e';ctx.beginPath();ctx.arc(X(s[1]),Y(s[2]),G.cursor_radius*scale,0,Math.PI*2);ctx.fill();
  if($('arrow').checked&&s[3]!==null&&s[4]!==null&&Math.hypot(s[3],s[4])>1e-9){const x=X(s[1]),y=Y(s[2]),ex=X(s[1]+s[3]*.1),ey=Y(s[2]+s[4]*.1),a=Math.atan2(ey-y,ex-x);ctx.strokeStyle='#68d9ff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.lineTo(ex-8*Math.cos(a-.5),ey-8*Math.sin(a-.5));ctx.moveTo(ex,ey);ctx.lineTo(ex-8*Math.cos(a+.5),ey-8*Math.sin(a+.5));ctx.stroke();}}
  if(gap){ctx.fillStyle='#f4c666';ctx.textAlign='center';ctx.font='20px system-ui';ctx.fillText('此时间段没有 cursor 采样',w/2,h/2);}
- if(playing&&t>=D.duration)pause();
+ if(playing&&t>=rangeEnd)pause();
 }
+selectClip(D.initial_clip||'full');
 function tick(){draw();requestAnimationFrame(tick);}requestAnimationFrame(tick);
 window.addEventListener('keydown',e=>{if(e.code==='Space'&&e.target.tagName!=='SELECT'&&e.target.tagName!=='INPUT'){e.preventDefault();$('play').click();}});
 </script></html>

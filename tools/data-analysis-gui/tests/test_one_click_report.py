@@ -175,7 +175,7 @@ def test_summary_only_report_uses_cached_run_data_but_exports_no_run_figures(rep
     images=list(root.rglob('*.png'));assert images
     assert all('summary_all_runs' in p.relative_to(root).parts for p in images)
     assert not list(root.rglob('runs'))
-    assert not list(root.rglob('BGA_daily_first_run'))
+    assert (root/'02_通道稳定性分析/BGA_daily_first_run').is_dir()
     manifest=json.loads((root/'report.json').read_text(encoding='utf-8'))
     assert manifest['include_run_exports'] is False
     assert all(not s['pngs'] for s in manifest['sources'] if s['section'] in ('s05','s14','s10','s13'))

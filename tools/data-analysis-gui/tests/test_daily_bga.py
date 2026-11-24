@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np
-from data_analysis_gui.report_bga import first_run,first_run_status
+from data_analysis_gui.report_bga import first_run,first_run_status,first_usable_run
 
 
 def test_first_run_is_not_replaced_by_later_recorded_run(tmp_path):
@@ -9,6 +9,30 @@ def test_first_run_is_not_replaced_by_later_recorded_run(tmp_path):
     assert first_run(tmp_path)==first
     values,info=first_run_status(first)
     assert info['status']=='no_xdf' and np.isnan(values).all()
+
+
+def test_daily_selection_skips_missing_and_broken_xdf_and_accepts_zero_codes(tmp_path,monkeypatch):
+    from data_analysis_gui import report_bga
+    for i in range(1,5):(tmp_path/f'run-{i:03d}-Grid-offline').mkdir()
+    for i in (2,3,4):(tmp_path/f'run-{i:03d}-Grid-offline/data.xdf').write_bytes(b'xdf')
+    calls=[]
+    def read(path):
+        calls.append(path.parent.name)
+        if '002' in path.parent.name:raise ValueError('corrupt')
+        return {'spike_counts':{'info':{'desc':[{'channel_ids':['1,3']}]},'time_series':np.zeros((2,2)),'time_stamps':[1.,2.]}},[]
+    monkeypatch.setattr(report_bga,'load_streams',read)
+    folder,values,info,_,skipped=first_usable_run(tmp_path)
+    assert folder.name=='run-003-Grid-offline' and info['status']=='ok'
+    assert values[0]==values[2]==0
+    assert [r['status'] for r in skipped]==['no_xdf','unavailable']
+    assert calls==['run-002-Grid-offline','run-003-Grid-offline']
+
+
+def test_daily_selection_reports_unavailable_only_after_checking_all_runs(tmp_path):
+    for i in (1,2):(tmp_path/f'run-{i:03d}-Grid-offline').mkdir()
+    folder,values,info,_,skipped=first_usable_run(tmp_path)
+    assert folder.name=='run-001-Grid-offline'
+    assert info['status']=='no_xdf' and np.isnan(values).all() and len(skipped)==2
 
 
 def test_spike_only_run_uses_explicit_channel_identity_and_zero_is_observed(tmp_path,monkeypatch):

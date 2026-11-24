@@ -8,6 +8,7 @@ import pytest
 from data_analysis_gui.core.catalog import Recording
 from data_analysis_gui.sections.s15_task_replay_v1.replay import PlaybackClock, build_payload, sample_at, source_files
 from data_analysis_gui.sections.s15_task_replay_v1.section import SECTION
+from data_analysis_gui.sections.s15_task_replay_v1.clips import replay_clips
 
 
 def session(tmp_path, mode='grid'):
@@ -67,6 +68,83 @@ def test_clock_is_wall_time_and_speed_changes_are_continuous():
     c.seek(9);c.play();now[0]+=3;assert c.position()==10
     c.play();assert c.position()==0
     with pytest.raises(ValueError):c.speed(0)
+
+
+def test_clock_stops_and_restarts_inside_selected_clip():
+    now=[0.];c=PlaybackClock(300,now=lambda:now[0])
+    c.set_range(80,140);assert c.position()==80
+    c.play();now[0]=90;assert c.position()==140
+    c.play();assert c.position()==80
+    c.seek(0);assert c.position()==80
+    c.seek(300);assert c.position()==140
+    with pytest.raises(ValueError):c.set_range(-1,60)
+
+
+def test_peak_saved_windows_use_recorded_clock_exclude_unrecorded_tail(tmp_path):
+    import csv,math
+    path=tmp_path/'rolling_metrics.csv'
+    ns=1_790_000_000_000_000_000
+    times=np.arange(100.,401.)
+    cursor=np.zeros((len(times),12));cursor[:,0]=ns+np.arange(len(times))*1e9
+    rows=[dict(task_mode='grid',window_sec=60,window_end_elapsed_sec=t,acquired=n,target_count=49,
+               achieved_bitrate_bps=n*math.log2(49)/60,system_timestamp_ns=ns+int(t*1e9))
+          for t,n in [(30,60),(150,45),(180,45),(400,90)]]
+    with path.open('w',newline='') as f:
+        w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+    clips,peak=replay_clips({'rolling_metrics':path},cursor,times,[],dict(grid_rows=7,grid_cols=7),'grid')
+    assert peak['start']==90 and peak['end']==150  # Earliest tie; partial and uncaptured windows rejected.
+    assert clips[2]['start']==30 and clips[2]['end']==210 and not clips[2]['clipped']
+    assert peak['whole_task_saved_peak_bps']>peak['bps']
+
+
+def test_missing_saved_bps_is_not_recomputed_from_acquisitions():
+    times=np.arange(100.,201.);cursor=np.zeros((101,12))
+    cursor[:,8]=1;cursor[:,10]=np.arange(101)
+    events=[[t,'T_TARGET_ACQUIRED'] for t in [10,20,30,40,50,60,90]]
+    events.append([60,'T_TARGET_ACQUIRED'])  # Duplicate trial completion does not increase BPS.
+    clips,peak=replay_clips({},cursor,times,events,dict(grid_rows=7,grid_cols=7),'grid')
+    assert peak is None and not clips[1]['available'] and not clips[2]['available']
+    short,_=replay_clips({},cursor[:20],times[:20],events,dict(grid_rows=7,grid_cols=7),'grid')
+    assert not short[1]['available']
+
+
+def test_short_grid_transition_is_smooth_but_reset_and_gap_are_not(tmp_path):
+    s=session(tmp_path)
+    s.cursor[2,2:4]=[20,10]  # Same movement across a new trial, not a reset.
+    p=build_payload(s,SECTION.defaults())
+    _,state,gap=sample_at(p,.15)
+    assert state[1:3]==pytest.approx([15,7.5]) and not gap
+    assert state[8]==1  # Discrete trial/BPS identity changes only at its recorded frame.
+    assert sample_at(p,.5)[2]
+    s.cursor[2,2]=900
+    p=build_payload(s,SECTION.defaults())
+    assert sample_at(p,.15)[1][1]==10
+
+
+def test_recorded_bps_exact_trial_values_and_no_clip_rebasing(tmp_path):
+    import csv
+    from data_analysis_gui.sections.s15_task_replay_v1.recorded_bps import read_recorded_bps,bps_for_state
+    path=tmp_path/'rolling_metrics.csv'
+    fields=['task_mode','sample_reason','block_num','trial_num_overall','achieved_bitrate_bps','window_sec']
+    rows=[['grid','trial_result',1,22,'1.234567890123456',60],
+          ['grid','trial_result',1,23,'0.0',60],['grid','session_end',1,23,'9.9',60]]
+    with path.open('w',newline='') as f:
+        w=csv.writer(f);w.writerow(fields);w.writerows(rows)
+    data=read_recorded_bps({'rolling_metrics':path},'grid')
+    payload={'recorded_bps':data,'initial_clip':'best60'}
+    state=[0]*12;state[7:9]=[1,22]
+    assert bps_for_state(payload,state)==float(rows[0][4])
+    assert data['trials'][0]['raw_value']==rows[0][4]
+    state[8]=23;assert bps_for_state(payload,state)==0
+    state[8]=24;assert bps_for_state(payload,state) is None
+    assert read_recorded_bps({},'grid')['trials']==[]
+
+
+def test_conflicting_recorded_bps_is_reported(tmp_path):
+    from data_analysis_gui.sections.s15_task_replay_v1.recorded_bps import read_recorded_bps
+    path=tmp_path/'rolling_metrics.csv'
+    path.write_text('task_mode,sample_reason,block_num,trial_num_overall,achieved_bitrate_bps,window_sec\ngrid,trial_result,1,1,1.2,60\ngrid,trial_result,1,1,1.3,60\n')
+    with pytest.raises(ValueError,match='冲突'):read_recorded_bps({'rolling_metrics':path},'grid')
 
 
 def test_manual_zero_velocity_falls_back_to_position_difference(tmp_path):

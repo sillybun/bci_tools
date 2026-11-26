@@ -39,6 +39,56 @@ S14 第七张图为有效通道深度分布：整段加载的 run 中任意一�
 输出六张 hot_r 热力图，六图按共同最大统计值自动统一色条范围，并导出实际参与 run 数的 CSV。
 每份录制是一个样本，不按天或 bin 数加权。单记录 S14 色条仍固定 0–25。
 
+## 多台电脑同步
+
+本工具的共享分支是 [`origin/data-analysis-gui`](https://github.com/sillybun/bci_tools/tree/data-analysis-gui)。在本工具目录运行 Git 命令即可。各台电脑可以使用不同的盘符和数据目录。
+
+### 开工和更新
+
+首次配置时执行 `git clone --branch data-analysis-gui https://github.com/sillybun/bci_tools.git`，然后进入 `bci_tools/tools/data-analysis-gui`。已有仓库先确认 `git remote -v` 和 `git status --short --branch`。共享分支的工作区干净时执行：
+
+```powershell
+git switch data-analysis-gui
+git fetch origin
+git merge --ff-only origin/data-analysis-gui
+git rev-parse HEAD
+uv sync --locked
+```
+
+有本机修改时先检查 `git diff` 和 `git diff --cached`。需要跨机继续时，把待交接的改动纳入下一个发布批次，向用户确认后再提交和推送。遇到分支分叉或修改重叠时，先比较双方改动，再决定如何整合。启动前按本机目录设置 GUI 的数据根目录、布局与输出路径。
+
+### 开发、提交和发布
+
+1. 从更新后的 `data-analysis-gui` 创建 `codex/<任务名>` 分支。可以并行开发不同任务。同一任务在另一台电脑继续时，从远端检出原任务分支。
+2. 小改动先留在本机工作区，积攒成一批可以一起说明和验证的改动。涉及启动方式、默认参数、布局、输出或兼容性时，把 README 和实现放在同一批。
+3. 运行相关测试或最小复现，向用户说明待提交的范围、验证结果和拟推送的分支。**所有电脑上的 Codex 都要先取得用户对本批次的明确确认，再执行 `git commit` 或 `git push`。** 一次确认可以同时覆盖两项操作，按用户确认的范围执行。
+4. 获得确认后逐路径暂存本批次文件，用 `git diff --cached --check` 和 `git diff --cached` 核对范围，再用 `feat:`、`fix:` 或 `docs:` 等前缀提交。获准发布时用 `git push -u origin HEAD` 推送任务分支。涉及多人并行开发或功能改动时，通过 PR 合入 `data-analysis-gui`。获准直接发布到共享分支时，先确认远端可快进。发布后用 `git ls-remote origin refs/heads/<分支>` 核对提交。
+
+Git 跟踪代码、锁文件、文档和获准纳入项目的小型测试样本。原始 XDF、实验配置与日志、结果与缓存、`.venv` 和 `.local/preferences.json` 通过各自的数据存储或本机环境管理。独立分发的布局表和深度表用文件名及 SHA-256 对齐，例如 `Get-FileHash -Algorithm SHA256 <本机文件路径>`。交接报告时记录数据范围、运行参数、布局文件名及哈希、代码提交，并提供接收方可访问的数据或结果位置。
+
+当前交接涉及的新版布局资料是 `channel_layout/TS3.0_ChannelMap_Final.xlsx`，使用「电极shank通道对应」工作表。已核对版本的 SHA-256 为 `459E3E845B2B6A7ADECB15F3D0783FE7C69A78540D4941FFBECE22642516CEEC`。新版读取器和 GUI 默认路径的切换是待实现的代码任务，布局文件需要在目标电脑的数据目录中单独准备。
+
+### 发给另一台电脑上 Codex 的指令
+
+在目标电脑打开本工具目录对应的 Codex 聊天，把尖括号替换为交接信息后发送：
+
+```text
+请同步 bci_tools 的 data-analysis-gui 工具。
+远端 https://github.com/sillybun/bci_tools.git
+目标分支 <分支名>，交接提交 <SHA>
+同步后继续 <具体任务或仅同步验证>
+数据和配置 <本机数据位置、依赖文件名及 SHA-256>
+验证 <测试命令或日期、run 和预期输出>
+
+如需继续开发，把小改动积攒到同一个批次，并在 commit 或 push 前请我确认。
+先检查当前分支、远端、已暂存和未提交的修改。fetch 后确认交接提交
+在目标远端分支历史里。工作区干净时切到目标分支，并用 --ff-only 更新。
+遇到本机改动重叠或分支分叉，先报告文件和双方提交。
+同步成功后执行 uv sync --locked 和上述验证，回复实际分支、HEAD、
+验证结果及仍需从外部同步的数据。若需复现交接提交的精确版本，
+用独立 checkout 或 worktree 检出该 SHA。
+```
+
 ## 界面
 
 命名备注仅标注有区别的实验条件：有目标辅助时标 `assist-速度`，手束缚时标 `restrained`；普通脑控不再附加 `arm-free` 或 `no-assist`，offline 不再重复附加 `manual`。完整控制参数仍保存在配置和 session_info.json 中。

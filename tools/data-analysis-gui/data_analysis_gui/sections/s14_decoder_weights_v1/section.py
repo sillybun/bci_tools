@@ -10,7 +10,7 @@ from scipy import linalg
 
 from ... import decoders as D
 from ... import config as C
-from ...core.channels import layout_grid
+from ...core.channels import ELECTRODE_SITE_TICKS, add_missing_sites_key, layout_grid
 from ...core import style
 from ...decoders._blas import single_thread
 from ..base import Param, Section, SectionResult
@@ -70,7 +70,7 @@ def channel_rows(layout, ids, weights, keep):
         j = lookup.get(e)
         vx, vy = weights[j] if j is not None else (np.nan, np.nan)
         rows.append(dict(channel_0based=index, electrode_id=e, stored_column_0based=j,
-                         shank=int(c + 1), elec_index=int(r), transmitted=j is not None,
+                         shank=int(c + 1), elec_index=int(r)+1, transmitted=j is not None,
                          status='untransmitted' if j is None else 'fitted' if keep[j] else 'constant_dropped',
                          vx_signed=float(vx), vy_signed=float(vy),
                          vx=float(abs(vx)), vy=float(abs(vy)), norm=float(np.hypot(vx, vy))))
@@ -80,8 +80,8 @@ def channel_rows(layout, ids, weights, keep):
 def depth_rows(rows, size):
     total = sum(row['norm'] for row in rows if row['transmitted'])
     result = []
-    for start in range(0, 128, size):
-        end = min(start + size - 1, 127)
+    for start in range(1, 129, size):
+        end = min(start + size - 1, 128)
         sites = [r for r in rows if start <= r['elec_index'] <= end]
         selected = [r for r in sites if r['transmitted']]
         row = dict(elec_start=start, elec_end=end, elec_mid=(start + end) / 2,
@@ -100,41 +100,35 @@ def depth_rows(rows, size):
 def weight_figure(layout, ids, values, component, numeric, banner, unit, *, color_limits=(0., 25.)):
     """Fixed reversed-hot 0-25 magnitude map; high weights use dark colors."""
     fig = Figure(figsize=(8.27, 11.69), dpi=110)
-    ax = fig.add_axes([.10, .11, .70, .77])
+    ax = fig.add_axes([.10, .10, .70, .79])
     grid = layout_grid(layout, ids, np.abs(values))
     cmap = colormaps['hot_r'].with_extremes(bad=style.MISSING)
     norm = Normalize(*color_limits)
-    upper = float(color_limits[1])
     im = ax.imshow(np.ma.masked_invalid(grid), origin='lower', aspect='auto', cmap=cmap,
-                   norm=norm, interpolation='nearest')
-    cax = fig.add_axes([.84, .11, .025, .77])
+                   norm=norm, interpolation='nearest', extent=(-.5, 7.5, .5, 128.5))
+    cax = fig.add_axes([.84, .12, .025, .77])
     bar = fig.colorbar(im, cax=cax, label=unit, extend='max', ticks=MaxNLocator(nbins=6))
     bar.ax.tick_params(labelsize=6)
     if numeric:
         for r, c in zip(*np.nonzero(np.isfinite(grid))):
             red, green, blue, _ = cmap(norm(grid[r, c]))
             color = 'black' if .2126 * red + .7152 * green + .0722 * blue > .5 else 'white'
-            ax.text(c, r, f'{grid[r,c]:.2f}', ha='center', va='center', fontsize=3.5, color=color)
-        fig.text(.5, .047, f'Absolute values; multiplier x1; numbers above {upper:g} are retained',
-                 fontsize=6, ha='center')
+            ax.text(c, r+1, f'{grid[r,c]:.2f}', ha='center', va='center', fontsize=3.5, color=color)
         ax.set_xticks(np.arange(-.5, 8, 1), minor=True)
-        ax.set_yticks(np.arange(-.5, 128, 1), minor=True)
+        ax.set_yticks(np.arange(.5,129,1), minor=True)
         ax.grid(which='minor', color='#DFE3E7', lw=.25)
         ax.tick_params(which='minor', length=0)
     ax.set_xticks(range(8), [str(i) for i in range(1, 9)])
     ax.xaxis.tick_bottom();ax.xaxis.set_label_position('bottom')
     ax.set_xlabel('Shank', fontsize=7)
-    ticks = np.r_[np.arange(0, 128, 16), 127]
-    ax.set_yticks(ticks, ticks)
-    ax.set_ylim(0, 127)
-    ax.set_ylabel('Elec# (0 near fan-in; 127 tip)', fontsize=7)
+    ax.set_yticks(ELECTRODE_SITE_TICKS)
+    ax.set_ylim(.5, 128.5)
+    ax.set_ylabel('Electrode #', fontsize=7)
     ax.tick_params(length=0, labelsize=6)
     label = '|wx|' if component == 'vx' else '|wy|' if component == 'vy' else 'norm(wx, wy)'
     fig.suptitle(f'{label} weighting - {"values" if numeric else "heatmap"}\n{banner}',
-                 fontsize=10, y=.978)
-    fig.text(.5, .025, f'hot_r: {color_limits[0]:g}-{upper:g}; high = dark, zero = white. Grey = untransmitted; >{upper:g} saturates.\n'
-             'Elec# is a position index; magnitude is model sensitivity, not causal contribution.',
-             ha='center', fontsize=6)
+                 fontsize=10, y=.905, va='bottom')
+    add_missing_sites_key(cax, style.MISSING)
     return fig
 
 
@@ -163,7 +157,7 @@ class DecoderWeights(Section):
         Param('weight_basis', '权重单位', 'choice', 'per_SD', choices=('per_SD', 'per_feature_unit'),
               help='per_SD：输入增加 1 个拟合标准差；per_feature_unit：输入增加 1 Hz 或 1 sqrt(Hz)。'),
         Param('depth_group_size', 'CSV 位置统计分组 / shank', 'int', 16, minimum=1, maximum=128),
-        Param('depth_csv', '通道深度 CSV', 'file', str(C.DEFAULT_DEPTH_CSV)),
+        Param('depth_csv', '通道深度 CSV（留空使用布局表轴向坐标）', 'file', ''),
         Param('active_depth_bin_um', '有效通道深度 bin / µm', 'float', 100., minimum=1.),
         Param('shank1_depth_offset_um', 'Shank1 深度修正 / µm（固定106850）', 'float', 106850.),
     )
@@ -239,14 +233,15 @@ class DecoderWeights(Section):
         result.tables.update(channel_weights=rows, depth_groups=depth)
         result.notes.extend(['按当前 run 的 S10 有效样本重新全量拟合，仅用于描述权重，不是 CV 性能评估。',
                              '默认 per_SD 权重表示输入增加一个拟合标准差的速度敏感度。相关通道会分摊权重；权重大小不能替代删通道后的解码性能变化。',
-                             'Elec# 0 靠近 fan-in、127 靠近尖端。没有植入方向和深度标定时，只比较沿杆位点位置，不推断解剖深度。',
+                             'Electrode # 按工作簿柄内位点显示为 1–128。',
                              '灰色为未传输通道，常数通道权重为零。位置分组均值只在已传输位点上计算，需同时查看覆盖数量。'])
         if name == 'velocity_kf':
             result.notes.append('KF 图显示稳态输入增益；实际 trial 开始阶段的增益随状态协方差变化。观测矩阵 C 不作为神经到速度的解码权重。')
         from .depth_distribution import append_distribution
-        append_distribution(result,ctx.session,path=ctx.params['depth_csv'],
-                            bin_um=ctx.params['active_depth_bin_um'],
-                            shank1_offset_um=ctx.params['shank1_depth_offset_um'])
+        if ctx.params['depth_csv'] or (ctx.layout and 'axial_distance_um' in ctx.layout):
+            append_distribution(result,ctx.session,path=ctx.params['depth_csv'],layout=ctx.layout,
+                                bin_um=ctx.params['active_depth_bin_um'],
+                                shank1_offset_um=ctx.params['shank1_depth_offset_um'])
         result.notes.append('深度分布图中的 single unit count 按非零事件通道计数，不代表 spike sorting 后的神经元数。')
         return result
 

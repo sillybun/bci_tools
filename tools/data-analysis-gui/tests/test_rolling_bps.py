@@ -158,9 +158,11 @@ def test_grid_uses_achieved_bitrate_and_combines_median_iqr_with_peak():
     assert rolling_bps.methods('grid') == [('bps', 'BPS = C × log₂(N) / T')]
     _, fig = rolling_bps.run_figure(rows, 'grid')
     try:
-        assert len(fig.axes) == 2
+        assert len(fig.axes) == 3
+        assert [label.get_text() for label in fig.axes[2].get_yticklabels()] == [
+            'Date', 'Run #', 'Cursor Speed', 'BC Speed', 'Next Target', 'Nearby Target', 'Assist Speed']
         assert fig.axes[0].get_shared_x_axes().joined(fig.axes[0], fig.axes[1])
-        assert fig.get_figwidth() / fig.get_figheight() == pytest.approx(297 / 210)
+        assert fig.axes[0].get_shared_x_axes().joined(fig.axes[0], fig.axes[2])
         assert {t.get_text() for t in fig.axes[0].get_legend().get_texts()} == {'BPS · median and IQR', 'BPS · peak'}
         peak, = [line for line in fig.axes[0].lines if line.get_label() == 'BPS · peak']
         assert peak.get_color() == '#bd5021'

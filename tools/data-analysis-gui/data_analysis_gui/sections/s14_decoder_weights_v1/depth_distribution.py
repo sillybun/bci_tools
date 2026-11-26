@@ -10,8 +10,13 @@ from ...core.channels import read_layout
 TITLE = 'Active channel depth distribution'
 
 
-def load_depths(path, shank1_offset_um=106850.):
-    layout = read_layout()
+def load_depths(path, shank1_offset_um=106850., *, layout=None):
+    layout = read_layout() if layout is None else layout
+    if not path and layout is not None and 'axial_distance_um' in layout:
+        return {ch: dict(channel_0based=ch, shank=int(shank)+1, elec_index=int(site)+1,
+                         depth_um=float(layout['axial_distance_um'][ch]),
+                         coordinate='workbook axial distance from site 1')
+                for ch, (site, shank) in enumerate(layout['position'])}
     if layout is None or layout.get('kind') != 'shank_table':
         raise ValueError('深度映射需要最新天枢 Shank 表')
     depths = {}
@@ -29,7 +34,7 @@ def load_depths(path, shank1_offset_um=106850.):
                 if ch in depths or not np.isfinite(raw + offset):
                     raise ValueError('深度 CSV 通道重复或深度非有限')
                 depths[ch] = dict(channel_0based=ch, csv_channel_0based=csv_channel,
-                                  csv_shank=shank, shank=plot_column+1, elec_index=elec_row, depth_original_um=raw,
+                                  csv_shank=shank, shank=plot_column+1, elec_index=elec_row+1, depth_original_um=raw,
                                   depth_offset_um=offset, depth_um=raw+offset)
     if set(depths) != set(range(1024)):
         raise ValueError('深度 CSV 必须完整覆盖 0–1023 通道')
@@ -66,13 +71,13 @@ def distribution(ids, maxima, depths, bin_um):
     return bins, channel_rows
 
 
-def figure(bins, label, *, y_max=None):
+def figure(bins, label, *, y_max=None, axis_label='Depth (µm)'):
     fig = Figure(figsize=(9,6),dpi=110,layout='constrained')
     ax = fig.subplots()
     x = np.array([r['depth_center_um'] for r in bins])
     y = np.array([r['single_unit_count'] for r in bins])
     ax.plot(x,y,color='#0072BD',lw=2.2,label=f'n = {int(y.sum())}')
-    ax.set_xlabel('Depth (\u00b5m)',fontsize=12)
+    ax.set_xlabel(axis_label,fontsize=12)
     ax.set_ylabel('single unit count',fontsize=12)
     ax.set_xlim(bins[0]['depth_left_um'],bins[-1]['depth_right_um'])
     ax.set_ylim(0, y_max if y_max is not None else max(1.,float(y.max())*1.15))
@@ -80,26 +85,29 @@ def figure(bins, label, *, y_max=None):
     ax.grid(axis='y',alpha=.15)
     ax.spines[['top','right']].set_visible(False)
     ax.legend(frameon=False)
-    ax.set_title(f'Active channel depth distribution\n{label}',fontsize=13)
+    ax.set_title('Active channel distribution · ' + ' '.join(label.splitlines()),fontsize=13)
+    fig.set_figwidth(max(9, len(ax.get_title()) * .10))
     return fig
 
 
-def append_distribution(result, session, *, path, bin_um=100., shank1_offset_um=106850.):
-    depths = load_depths(path,shank1_offset_um)
+def append_distribution(result, session, *, path, bin_um=100., shank1_offset_um=106850., layout=None):
+    depths = load_depths(path,shank1_offset_um,layout=layout)
+    workbook = not path
+    source = layout['source'] if workbook else path
+    coordinate = 'Workbook Y distance from site 1 within each shank' if workbook else 'Calibrated depth CSV'
     if not len(session.counts):
         raise ValueError('本记录没有可统计的神经帧')
     maxima = np.max(session.counts,axis=0)
     bins, channels = distribution(session.electrode_ids,maxima,depths,bin_um)
     n_active = sum(r['active'] for r in channels)
-    result.add_figure(TITLE,figure(bins,session.label),method=(
+    result.add_figure(TITLE,figure(bins,session.label,axis_label='Axial distance from site 1 (µm)' if workbook else 'Depth (µm)'),method=(
         f'Whole loaded recording, {len(session.counts)} received frames; no trial selection or model-coefficient threshold. '
         'Each transmitted channel contributes 1 if any frame has code > 0, otherwise 0; codes 1/2/3 count equally. '
-        f'Channel# = XDF electrode ID - 1, joined to {path}. Latest Shank1 +106850 um (0..6350 um), included. '
+        f'Channel# = XDF electrode ID - 1, joined to {source}. {coordinate}. '
         f'Depth histogram: {bin_um:g} um left-closed/right-open bins, equal depth ranges across runs. '
         'single unit count is the requested display label for active-channel count, not spike-sorted neuron count.'),
         data={'depth_bins':bins,'active_channels':channels})
     result.tables.update(active_depth_bins=bins,active_depth_channels=channels)
     result.summary.update(active_depth_channels=n_active,active_depth_bin_um=bin_um,
-                          active_depth_scope='whole_loaded_recording',active_depth_source=str(path),
-                          active_depth_shank1_offset_um=106850,
-                          active_depth_exclusion='none; latest Shank1 corrected +106850 um')
+                          active_depth_scope='whole_loaded_recording',active_depth_source=str(source), active_depth_coordinate=coordinate,
+                          active_depth_shank1_offset_um=None if workbook else 106850)

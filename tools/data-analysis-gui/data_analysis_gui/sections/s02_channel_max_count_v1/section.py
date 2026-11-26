@@ -411,7 +411,7 @@ class ChannelMaxCount(Section):
                 mask = np.where(boxes, 1.0, np.nan)
                 cells = layout_grid(layout, ids, mask) if layout is not None else id_grid(ids, mask)
                 for r, c in zip(*np.nonzero(cells == 1)):
-                    ax.add_patch(Rectangle((c - 0.5, r - 0.5), 1, 1, fill=False, ec=box_color, lw=box_lw, zorder=3))
+                    ax.add_patch(Rectangle((c - 0.5, r + 0.5), 1, 1, fill=False, ec=box_color, lw=box_lw, zorder=3))
         return image
 
     @staticmethod

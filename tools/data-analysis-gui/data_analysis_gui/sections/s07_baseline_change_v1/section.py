@@ -164,7 +164,7 @@ class BaselineChange(Section):
                 f'Eight-direction layout delta ({scale})', self.maps(means, ids, ctx.layout, scale, banner),
                 method=common + (
                     'Eight maps (one per direction) of mean delta on the '
-                    + ('physical workbook layout (columns A-H, rows 0-127)' if ctx.layout is not None
+                    + ('physical workbook layout (columns A-H, rows 1–128)' if ctx.layout is not None
                        else '128 x 8 electrode-id grid (no layout file)') + '; one shared colour scale across the '
                     'eight maps: ' + (f'linear, clipped at +-{clip:.3g} Hz (99th percentile)' if scale == 'linear'
                                       else 'signed log sign(d) x log10(1 + |d| / 1 Hz), ticks in raw Hz') + '.'),

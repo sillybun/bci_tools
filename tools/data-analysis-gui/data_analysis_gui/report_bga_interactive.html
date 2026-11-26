@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shank 与 BGA 通道映射</title>
+<style>
+:root{font-family:system-ui,"Microsoft YaHei",sans-serif;color:#17212b;background:#fbfcfd}
+*{box-sizing:border-box}
+body{margin:0;padding:24px 20px 40px}
+main{max-width:1100px;margin:auto}
+h1{font-size:25px;margin:0 0 8px} h2{font-size:17px;margin:0}
+p{margin:4px 0;color:#485565;font-size:14px}
+.toolbar{position:sticky;top:0;z-index:3;padding:10px 0;background:#fbfcfd;display:flex;gap:8px 18px;align-items:center;flex-wrap:wrap}
+form{display:flex;align-items:center;gap:8px}
+form button,input{font:inherit;padding:5px 8px;border:1px solid #a8b4bf;border-radius:5px;background:white;color:inherit}
+input{width:80px}
+#status{font-size:14px;font-variant-numeric:tabular-nums;flex:1;min-width:235px}
+#status strong{font-size:16px}
+section{margin:14px 0 20px;background:white}
+.section-head{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:10px 2px}
+.viewport{overflow:auto;overscroll-behavior:contain;border-block:1px solid #e6eaee;scrollbar-gutter:stable}
+#shank-view{height:clamp(240px,36vh,390px)}
+#bga-view{max-height:560px}
+.shank-grid{display:grid;grid-template-columns:62px repeat(8,minmax(68px,1fr));min-width:620px;align-items:center;text-align:center}
+.column-heading{position:sticky;top:0;z-index:1;background:#fff;padding:8px 0;border-bottom:1px solid #e6eaee;font-size:12px;font-weight:650}
+.site-label{font-size:11px;color:#596777;min-height:24px;padding:4px 0;background:#f7f9fb}
+.channel{font:600 10px ui-monospace,Consolas,monospace;cursor:pointer;color:#091117;border:0;background:none;position:relative}
+.channel:hover,.channel:focus-visible{outline:2px solid #526274;outline-offset:1px;z-index:1}
+.shank-point{border-radius:20px;justify-self:center;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:61px;min-height:23px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--shank)}
+.channel[aria-pressed=true]{outline:2px solid #101820;outline-offset:2px;z-index:1}
+.shank-point[aria-pressed=true]{background:#edf2f7}
+.bga-grid{display:grid;grid-template-columns:24px repeat(38, max(21px, 2.1vw));grid-auto-rows:max(21px, 2.1vw);width:max-content;margin:0 auto;padding:9px 12px;align-items:center;justify-items:center}
+@media (min-width:1050px){.bga-grid{grid-template-columns:24px repeat(38,26px);grid-auto-rows:26px}}
+.bga-point{border-radius:50%;width:83%;height:83%;padding:0;background:var(--shank)}
+.coord{font:10px ui-monospace,Consolas,monospace;color:#465564;user-select:none}
+footer{font-size:12px;color:#4a5868;margin-top:16px;overflow-wrap:anywhere}
+a{color:#154e78}
+</style>
+</head>
+<body>
+<main>
+<h1>Shank 与 BGA 通道映射</h1>
+<p>点击任一位点，两图同步高亮同一通道。</p>
+<div class="toolbar">
+<form id="lookup"><label for="channel-input">通道</label><input id="channel-input" type="number" min="0" max="1023" required><button type="submit">定位</button></form>
+<div id="status" aria-live="polite">请选择通道</div>
+</div>
+<section>
+<div class="section-head"><h2>Shank 位点</h2><p>柄内位点 1–128</p></div>
+<div id="shank-view" class="viewport"><div id="shank" class="shank-grid"></div></div>
+</section>
+<section>
+<div class="section-head"><h2>BGA 位点</h2><p>行 1–30，列 1–38</p></div>
+<div id="bga-view" class="viewport"><div id="bga" class="bga-grid"></div></div>
+</section>
+<footer><a href="__SOURCE__">原始 BGA 图</a> · TS3.0_ChannelMap_Final.xlsx<br>SHA-256 __DIGEST__</footer>
+</main>
+<script>
+"use strict";
+const rows = __ROWS__;
+const colors = __COLORS__;
+const shank = document.getElementById("shank");
+const bga = document.getElementById("bga");
+const input = document.getElementById("channel-input");
+const status = document.getElementById("status");
+const keys = rows.map(() => ({}));
+const sites = new Map(rows.map(r=>[(r[1]-1)+8*(r[2]-1),r]));
+const order = __ORDER__;
+let active = null;
+
+function simple(parent, name, text) {
+  const element = document.createElement("div");
+  element.className = name;
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function point(parent, record, view) {
+  const [channel, shankId, site, row, col] = record;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "channel " + view + "-point";
+  button.dataset.channel = channel;
+  button.setAttribute("aria-pressed","false");
+  button.title = `CH ${channel} · Shank ${shankId} · 位点 ${site} · BGA 行 ${row} / 列 ${col}`;
+  button.setAttribute("aria-label",button.title);
+  button.style.setProperty("--shank",colors[shankId-1]);
+  button.textContent = channel;
+  if(view === "shank"){
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.setAttribute("aria-hidden","true");
+    button.appendChild(dot);
+  } else {
+    button.style.gridRow = 31-row;
+    button.style.gridColumn = col+1;
+  }
+  button.addEventListener("click",()=>select(channel,view));
+  keys[channel][view] = button;
+  parent.append(button);
+}
+
+simple(shank,"column-heading","位点");
+for(const s of order){
+  const heading=simple(shank,"column-heading","Shank "+s);
+  heading.style.color="#253d4d";
+  heading.style.borderBottomColor=colors[s-1];
+}
+for(let site=0;site<128;site++){
+  simple(shank,"site-label",site+1);
+  for(const s of order)point(shank,sites.get(site*8+s-1),"shank");
+}
+for(let row=1;row<=30;row++){
+  const label=simple(bga,"coord",row);
+  label.style.gridRow=31-row;
+  label.style.gridColumn=1;
+}
+for(let col=1;col<=38;col++){
+  const label=simple(bga,"coord",col);
+  label.style.gridRow=31;
+  label.style.gridColumn=col+1;
+}
+for(const record of rows)point(bga,record,"bga");
+
+function reveal(view,button) {
+  const viewport=document.getElementById(view+"-view");
+  const outer=viewport.getBoundingClientRect(), inner=button.getBoundingClientRect();
+  const top=inner.top-outer.top, left=inner.left-outer.left;
+  const padding=view==="shank"?38:8;
+  if(top<padding || inner.bottom>outer.bottom-8)
+    viewport.scrollTop+=top-(viewport.clientHeight-inner.height)/2;
+  if(left<8 || inner.right>outer.right-8)
+    viewport.scrollLeft+=left-(viewport.clientWidth-inner.width)/2;
+}
+
+function select(channel,origin){
+  if(!Number.isInteger(channel)||!keys[channel])return;
+  if(active!==null)for(const button of Object.values(keys[active]))button.setAttribute("aria-pressed","false");
+  active=channel;
+  for(const [view,button] of Object.entries(keys[channel])){
+    button.setAttribute("aria-pressed","true");
+    if(view!==origin)reveal(view,button);
+  }
+  const [,shankId,site,row,col]=rows[channel];
+  input.value=String(channel);
+  const strong=document.createElement("strong");
+  strong.textContent="CH "+channel;
+  status.replaceChildren(strong,` · Shank ${shankId} · 位点 ${site} · BGA 行 ${row} / 列 ${col}`);
+}
+document.getElementById("lookup").addEventListener("submit",event=>{
+  event.preventDefault();
+  select(input.valueAsNumber);
+});
+</script>
+</body>
+</html>

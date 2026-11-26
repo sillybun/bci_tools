@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from ... import config as C
+from ...core.archive_logs import archived_logs
 
 
 def source_files(recording):
@@ -19,15 +20,15 @@ def source_files(recording):
     root = files['trials'].parent
     root = root.parent if root.name == 'behavior' else root
     for key, candidates in [('task_config', ['task_config.json','config/task_config.json']),
-                            ('rolling_metrics', ['rolling_metrics.csv','behavior/rolling_metrics.csv']),
-                            ('task_log', ['logs/task.log','logs/cursor_tasks_app.log'])]:
+                            ('rolling_metrics', ['rolling_metrics.csv','behavior/rolling_metrics.csv'])]:
         for relative in candidates:
             path = root / relative
             if path.is_file():
                 files[key] = path
                 break
     if 'task_log' not in files:
-        candidates = sorted((root/'logs').glob('*-task*.log'))
+        candidates = (archived_logs(root/'logs','task.log') or archived_logs(root/'logs','cursor_tasks_app.log') or
+                      archived_logs(root/'logs','*-task*.log'))
         if len(candidates)==1:
             files['task_log'] = candidates[0]
     return files

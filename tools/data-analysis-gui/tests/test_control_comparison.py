@@ -45,3 +45,20 @@ def test_binary_workbook_attachment_survives_export(tmp_path):
     saved=storage.save_result(result,out,'test',dict(recordings=[],criteria={},params={},code='test'),SECTION,[])
     assert (out/saved['attachments']['stats.xlsx']).read_bytes()==b'PK\x03\x04\x00binary\xff'
     assert (out/saved['attachments']['note.txt']).read_text(encoding='utf-8')=='中文'
+
+
+def test_long_run_name_leaves_room_for_chinese_footer():
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from data_analysis_gui.control_comparison import figure
+    from data_analysis_gui.core.style import finish_figure
+
+    name = 'run-005-Grid-online-7x7-sp042-bc125-dw001-nextT-nearby3-ass150'
+    row = dict(date='2026-11-26', run='005', run_name=name, plot_id='63', control='BCI')
+    fig = figure([row], 'grid', '脑控与离线摇杆')
+    finish_figure(fig)
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    axis_label = fig.axes[-1].xaxis.label.get_window_extent(renderer)
+    footnote = fig.texts[-1].get_window_extent(renderer)
+    assert footnote.y1 < axis_label.y0

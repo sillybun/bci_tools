@@ -245,7 +245,7 @@ class CrossDayVelocityDecoding(Section):
                             fmt='none', ecolor=color, capsize=4)
                 ax.scatter(x + offset, y, color=color, label=name, zorder=3)
             n = [row['n_trials'] for row in metric_rows if row['decoder'] == 'ridge']
-            X.recording_ticks(ax, x, [f'{label}\nn={count}' for label, count in zip(labels, n)], fontsize=7)
+            X.recording_ticks(ax, x, [f'{label} · n={count}' for label, count in zip(labels, n)], fontsize=7)
             ax.grid(axis='y', alpha=.25)
             ax.set_title(metric)
         # Mark zero only when it falls within the data-driven view.

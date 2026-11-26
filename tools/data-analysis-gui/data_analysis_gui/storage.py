@@ -152,6 +152,7 @@ def uses_channel_config(section):
 def signature_inputs(section, recordings, criteria, params, layout_path='', *, channel_config_path=None,
                      font_percent=DEFAULT_FONT_PERCENT) -> dict:
     """Everything that determines a section result, including its effective config."""
+    from .core.archive_names import SHORT_XDF
     from .core.catalog import day_config_path
     from .core.session import recording_window_policy
     config_path = ''
@@ -167,6 +168,10 @@ def signature_inputs(section, recordings, criteria, params, layout_path='', *, c
                 layout=optional_digest(layout_path) or 'index-128x8',
                 channel_config=dict(path=config_path, sha256=optional_digest(config_path)) if config_path else '')
     for source, recording in zip(inputs['recordings'], recordings):
+        if SHORT_XDF.fullmatch(recording.path.name):
+            source['relative_path'] = recording.relative
+        if run_name := getattr(recording, 'run_name', ''):
+            source['display_run_name'] = run_name
         if getattr(recording, 'condition', ''):
             source['condition'] = recording.condition
         window = recording_window_policy(recording)
@@ -223,7 +228,8 @@ def result_folder(root, section, recordings, signature: str) -> Path:
         r = recordings[0]
         base = root / 'single' / slug(f'{r.date}_{r.data_type}_run-{r.run}_{r.path.stem}', 90)
     else:
-        names = sorted(r.path.name for r in recordings)
+        from .core.archive_names import SHORT_XDF
+        names = sorted(r.relative if SHORT_XDF.fullmatch(r.path.name) else r.path.name for r in recordings)
         base = root / 'cross' / f'{len(recordings)}rec_{fingerprint(names)[:8]}'
     return base / f'{section.id}_{section.version}' / signature[:12]
 

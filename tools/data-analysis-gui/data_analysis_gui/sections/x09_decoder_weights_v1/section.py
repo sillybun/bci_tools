@@ -36,7 +36,7 @@ def aggregate_result(layout, runs, labels, unit, *, progress=lambda _: None):
     limits = (0., upper)
     rows = []
     for ch, (r, c) in enumerate(layout['position']):
-        row = dict(channel_0based=ch, electrode_id=ch+1, shank=int(c+1), elec_index=int(r),
+        row = dict(channel_0based=ch, electrode_id=ch+1, shank=int(c+1), elec_index=int(r)+1,
                    n_runs_observed=int(counts[ch]), n_runs_selected=len(runs),
                    n_runs_constant=int(constant[:, ch].sum()),
                    n_runs_fitted=int(counts[ch] - constant[:, ch].sum()))
@@ -51,7 +51,7 @@ def aggregate_result(layout, runs, labels, unit, *, progress=lambda _: None):
               'excluded; transmitted constant-input channels retain zero weight. norm is computed within '
               'each run before aggregation, not from aggregated wx/wy. No clipping before aggregation. '
               f'hot_r, shared color range 0-{upper:g} across all six plots, covering their global maximum; '
-              'high dark, zero white, missing grey; Elec# 0 bottom and 127 top. '
+              'high dark, zero white, missing grey; Electrode # 1 at the bottom and 128 at the top. '
               'Channel coverage and both statistics are exported to CSV. Weight magnitude is sensitivity, '
               'not a held-out ablation effect.')
     for statistic, matrix in (('median', median), ('average', mean)):

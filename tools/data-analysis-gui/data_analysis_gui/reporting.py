@@ -19,7 +19,8 @@ from .sections import versions
 from .sections.base import new_figure
 
 
-REPORT_ROOT = Path('E:/AitBCI/data_analysis_gui_output/keaiduo/report')
+REPORT_ROOT = C.default_output_root(C.DEFAULT_DATA_ROOT) / 'report'
+DEFAULT_REPORT_TRIAL_THRESHOLD = 50
 CATEGORIES = (
     '01_数据及实验范式示意图', '02_通道稳定性分析', '03_通讯稳定性分析',
     '04_离线解码分析', '05_在线脑控行为_CO8', '06_在线脑控行为_Grid',
@@ -34,6 +35,44 @@ def report_run_group(recording):
         return str(folder.resolve())
     return '|'.join((recording.date, recording.task_mode, str(recording.online),
                      recording.run or recording.key))
+
+
+def filter_report_recordings(recordings, threshold=DEFAULT_REPORT_TRIAL_THRESHOLD):
+    """Keep readable recordings from selected runs above the trial threshold."""
+    from .core.behavior import collect
+    from .core.session import Session
+
+    groups = {}
+    for recording in recordings:
+        groups.setdefault(report_run_group(recording), {})[recording.path.resolve()] = recording
+    selected, excluded = [], []
+    for group, members in groups.items():
+        readable, errors, csv_counts = [], [], {}
+        marker_count = 0
+        for path, recording in members.items():
+            if path.suffix.lower() != '.xdf' or not path.is_file():
+                errors.append(f'{path}: 缺少 XDF')
+                continue
+            try:
+                trials, source, _ = collect(Session.load(recording))
+            except Exception as exc:
+                errors.append(f'{path}: {exc}')
+                continue
+            readable.append(recording)
+            if source == 'XDF event markers':
+                marker_count += len(trials)
+            else:
+                csv_counts[Path(source).resolve()] = len(trials)
+        # A matched behavior CSV covers the run, including its XDF fragments.
+        count = sum(csv_counts.values()) if csv_counts else marker_count
+        if readable and count > threshold:
+            selected.extend(readable)
+            if errors:
+                excluded.append(dict(run=group, trials=count, reason='跳过无法使用的 XDF', details=errors))
+        else:
+            reason = f'Trial 数未超过 {threshold}' if readable else '没有可用 XDF'
+            excluded.append(dict(run=group, trials=count, reason=reason, details=errors))
+    return selected, excluded
 
 
 def report_plan(recordings, params_for, *, behavior_folders=None, online_behavior_folders=None, date_range=None, analysis_excluded_dates=(), include_run_exports=False):
@@ -69,7 +108,7 @@ def report_plan(recordings, params_for, *, behavior_folders=None, online_behavio
         if sid == 's14':
             source = versions('s10')[-1]
             raw['_source_sections'] = {'s10': {'version': source.version, 'params': params_for(source)}}
-            raw['depth_csv'] = str(C.DEFAULT_DEPTH_CSV)
+            raw['depth_csv'] = ''
         if sid == 's10' and not int(raw.get('n_boot', section.defaults()['n_boot'])):
             raw['n_boot'] = 200
         section.resolve_params(raw)
@@ -119,20 +158,34 @@ def _save_png(fig, path, font_percent):
     fig.clear()
 
 
+def velocity_summary_entries(entries):
+    return [
+        entry for entry in entries
+        if (entry['record']['summary'].get('n_trials') or 0) > DEFAULT_REPORT_TRIAL_THRESHOLD
+        and any(
+            (value := entry['record']['summary'].get(f'{name}_r2_mean')) is not None and math.isfinite(value)
+            for name in ('ridge', 'velocity_kf')
+        )
+    ]
+
+
 def _velocity_figure(entries, font_percent, destination):
-    fig = new_figure(max(11, 1.25 * len(entries)), 5.8)
+    models = ((-.16, 'velocity_kf', '#c83327', 'Vel-KF'), (.16, 'ridge', '#2176ae', 'Ridge'))
+    entries = velocity_summary_entries(entries)
+    if not entries:
+        return
+    fig = new_figure(max(11, .47 * len(entries)), 10)
     ax = fig.subplots()
     labels = [f'{entry["label"]} · n={entry["record"]["summary"].get("n_trials", "?")}' for entry in entries]
     for i in range(1, len(entries)):
         if entries[i]['date'] != entries[i - 1]['date']:
             ax.axvline(i - .5, color='#c8c8c8', ls='--', lw=.8)
-    for offset, name, color in ((-.16, 'velocity_kf', '#c83327'), (.16, 'ridge', '#2176ae')):
+    for offset, name, color, _ in models:
         x = np.arange(len(entries)) + offset
         for i, entry in enumerate(entries):
             summary = entry['record']['summary']
             value = summary.get(f'{name}_r2_mean')
             if value is None or not math.isfinite(value):
-                ax.text(i, .05, 'N/A', transform=ax.get_xaxis_transform(), ha='center', fontsize=8)
                 continue
             ax.plot(x[i], value, 'o', color=color)
             interval = summary.get(f'{name}_r2_mean_ci')
@@ -142,7 +195,7 @@ def _velocity_figure(entries, font_percent, destination):
     ax.grid(axis='y', alpha=.2)
     ax.set(title='Velocity', ylabel='Held-out R²', xlim=(-.7, len(entries) - .3))
     ax.legend(handles=[Line2D([], [], ls='none', marker='o', color=color, label=label)
-                       for color, label in (('#c83327', 'Vel-KF'), ('#2176ae', 'Ridge'))], frameon=False)
+                       for _, _, color, label in models], frameon=False)
     recording_ticks(ax, range(len(labels)), labels, fontsize=9)
     _save_png(fig, destination / 'Velocity.png', font_percent)
 
@@ -202,12 +255,14 @@ def assemble_report(report, entries, failures, font_percent, send):
                     font_policy=dict(title_pt=18, axis_label_pt=14, tick_pt=11, schematics='preserve legacy style'),
                     recording_count=len(report['recordings']), font_percent=font_percent,
                     analysis_excluded_dates=report.get('analysis_excluded_dates', []),
+                    run_filter=report.get('run_filter'),
+                    layout_path=report.get('layout_path'), layout_sha256=report.get('layout_sha256'),
                     include_run_exports=include_runs,
                     skipped=report['skipped'], failures=failures, sources=[], complete=False,
                     methods={
                         'Velocity.png': 'S10 held-out mean x/y velocity R² from five chronological block folds '
                                         'with ±1-block purge, Ridge and Vel-KF. Error bars are 95% block-bootstrap '
-                                        'intervals from the same predictions. Only selected offline sessions.',
+                                        'intervals from the same predictions. Only selected offline recordings with more than 50 S10 trials.',
                         'Grid_Behavior.png': 'S13 block metrics. Success percentage over all '
                                              'known attempts including timeouts, and successful-trial acquisition '
                                              'time median and IQR. Only selected online Grid sessions.',
@@ -290,6 +345,9 @@ def assemble_report(report, entries, failures, font_percent, send):
         manifest['bga_daily'] = render_daily_bga(work,report,font_percent,send,pool=pool)
         from .control_comparison import render_comparison
         manifest['control_comparison'] = render_comparison(work,report,font_percent,send,pool)
+        from .report_extra_figures import render_report_extras
+        manifest['supplementary_files'] = render_report_extras(
+            work, report, entries, manifest['sources'], font_percent, send, failures)
         manifest['complete'] = not failures
     except Exception as exc:
         failures.append(dict(stage='report assembly', message=str(exc)))
@@ -316,13 +374,17 @@ def assemble_report(report, entries, failures, font_percent, send):
 
 def run_report(request, run_jobs, send):
     request = dict(request)
-    if C.DEFAULT_LAYOUT_XLSX.is_file():
-        request['layout_path'] = str(C.DEFAULT_LAYOUT_XLSX)
+    from .core.channels import read_layout
+    layout = read_layout(C.DEFAULT_LAYOUT_XLSX)
+    if layout is None or 'axial_distance_um' not in layout:
+        raise ValueError(f'一键报告需要最终通道映射表：{C.DEFAULT_LAYOUT_XLSX}')
+    request['layout_path'] = str(C.DEFAULT_LAYOUT_XLSX)
     report = request['report']
     request['report_summary_only']=not bool(report.get('include_run_exports',False))
     request['report_run_pool_root']=str(Path(report['root'])/'individual_runs')
     report['recompute']=bool(request.get('recompute'))
-    report['layout_path'] = request.get('layout_path', '')
+    report['layout_path'] = request['layout_path']
+    report['layout_sha256'] = storage.file_digest(request['layout_path'])
     if len(request['jobs']) != len(report['categories']):
         raise ValueError('报告任务与目录分组数量不一致')
     task = f'report:{report["name"]}'

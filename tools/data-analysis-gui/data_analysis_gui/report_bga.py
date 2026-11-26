@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from . import config as C,storage
-from .core.catalog import day_folder,RUN_PREFIX
+from .core.catalog import day_folder,run_folder,RUN_PREFIX
 from .core.channels import read_layout
 from .core.xdf_io import load_streams,electrode_ids
 from .core.style import finish_figure
@@ -17,9 +17,10 @@ def first_run(day):
     return min(candidates,key=lambda p:(int(RUN_PREFIX.match(p.name)['number']),RUN_PREFIX.match(p.name)['part'] or '',p.name)) if candidates else None
 
 
-def first_usable_run(day,pool=None):
+def first_usable_run(day,pool=None,*,allowed=None):
     """Skip missing/broken recordings, retaining actual run identity and cache reuse."""
-    candidates=sorted((p for p in Path(day).iterdir() if p.is_dir() and RUN_PREFIX.match(p.name)),
+    candidates=sorted((p for p in Path(day).iterdir() if p.is_dir() and RUN_PREFIX.match(p.name)
+                       and (allowed is None or p.resolve() in allowed)),
         key=lambda p:(int(RUN_PREFIX.match(p.name)['number']),RUN_PREFIX.match(p.name)['part'] or '',p.name))
     skipped=[];first_unavailable=None
     def load(folder):
@@ -84,9 +85,7 @@ def bga_figure(layout,values,date,run,status):
     ax.spines[['left','bottom']].set_linewidth(.6)
     ax.xaxis.label.set_fontsize(20);ax.yaxis.label.set_fontsize(20)
     ax.xaxis.label.set_color('black');ax.yaxis.label.set_color('black');ax.tick_params(labelsize=9,colors='black')
-    match=RUN_PREFIX.match(Path(run).name)
-    run_id=(match['number']+('-'+match['part'] if match['part'] else '')) if match else run
-    fig.suptitle(f'Tianshu 3.0 - BGA Package - Run {run_id}',fontsize=24,fontweight='bold',y=.97,color='#17212B')
+    fig.suptitle(f'Tianshu 3.0 - BGA Package · {run}',fontsize=18,fontweight='bold',y=.97,color='#17212B')
     handles=[Line2D([],[],ls='',marker='o',markersize=5,color=color,label=f'Shank {i+1}') for i,color in enumerate(SHANK_COLORS)]
     missing_label='Not transmitted' if status in ('ok','partial_xdf_coverage') else 'Data unavailable'
     handles += [Line2D([],[],ls='',marker='o',markersize=5,color=color,label=label) for color,label in (
@@ -111,15 +110,22 @@ def render_daily_bga(work,report,font_percent=100,send=lambda *a,**k:None,*,pool
     if layout is None or layout.get('bga_position') is None:return dict(days=[],skipped='No BGA coordinates in workbook')
     excluded={d.replace('-','') for d in report.get('analysis_excluded_dates',[])}
     paths=[r['path'] for r in report.get('recordings',report.get('selection',[]))]
+    allowed = None
+    if report.get('run_filter') is not None:
+        allowed = {folder.resolve() for p in paths if (folder := run_folder(Path(p))) is not None}
     paths+=report.get('offline_behavior_folders',[])+report.get('online_behavior_folders',[])
     paths += [r['folder'] for key in ('offline_behavior','online_behavior') for r in report.get(key,{}).get('runs',[])]
     days={day_folder(Path(p)) for p in paths};days={p for p in days if p and p.name.replace('-','') not in excluded}
     out=Path(work)/'02_通道稳定性分析'/'BGA_daily_first_run';out.mkdir(parents=True,exist_ok=True)
     result=dict(layout_path=layout['source'],layout_sha256=storage.file_digest(layout['source']),style_reference=str(C.BGA_SHANK_PROJECTION.parent/'bga_shanks/BGA_20261111_run006_status.png'),color_policy='Any nonzero code: solid Shank color; observed all-zero: black; untransmitted: #BFC4CA. No colored outlines.',policy='First run in run-ID order with usable XDF spike data in each selected day. Skip runs without XDF or readable spike data; record selected run and skipped candidates. Entire received spike stream, independent of task-marker availability.',excluded_dates=sorted(excluded),days=[])
     for day in sorted(days):
-        folder,values,info,data_folder,skipped=first_usable_run(day,pool)
+        folder,values,info,data_folder,skipped=first_usable_run(day,pool,allowed=allowed)
         if pool:from .report_run_pool import dependencies
-        date=day.name;run=folder.name if folder else 'No run folder';stem=out/f'BGA_{date}_first_run'
+        date=day.name;run=folder.name if folder else 'No run folder'
+        if folder and (match := RUN_PREFIX.match(folder.name)):
+            from .core.run_config import configured_run_name
+            run=configured_run_name(folder,match['number'],match['task'],match['mode'],part=match['part'])
+        stem=out/f'BGA_{date}_first_run'
         def draw(staged):
             target=staged/stem.name
             fig=bga_figure(layout,values,date,run,info['status']);finish_figure(fig,font_percent)

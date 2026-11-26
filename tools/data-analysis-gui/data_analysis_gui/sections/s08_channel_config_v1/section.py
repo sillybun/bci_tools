@@ -45,8 +45,8 @@ def marker_positions(layout, electrodes):
     e = np.asarray(electrodes, int) - 1
     if layout is not None:
         pos = layout['position'][e]
-        return pos[:, 1], pos[:, 0]
-    return e // 128, e % 128
+        return pos[:, 1], pos[:, 0] + 1
+    return e // 128, e % 128 + 1
 
 
 class ChannelConfig(Section):

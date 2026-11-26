@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
+from ...core.archive_logs import archived_logs
 from ...core.catalog import day_folder, session_metadata
 from ...core import style
 from ...decoders._blas import single_thread
@@ -25,14 +26,14 @@ def resolve_run(recording, selected=''):
         root = Path(selected).expanduser()
         if not root.is_dir():
             raise ValueError(f'在线模型目录不存在：{root}')
-        found = sorted(root.rglob('online_update_swap_history.jsonl'))
+        found = archived_logs(root,'online_update_swap_history.jsonl',recursive=True)
     else:
         # A split XDF belongs to one explicit task-session bundle. Never borrow
         # another session's model history when this one has no applied updates.
         xdf_dir = Path(recording.path).parent
         if xdf_dir.name.lower() == 'xdf' and (
                 xdf_dir.parent.parent.name == 'sessions' or session_metadata(recording.path)):
-            found = sorted((xdf_dir.parent / 'refit').rglob('online_update_swap_history.jsonl'))
+            found = archived_logs(xdf_dir.parent/'refit','online_update_swap_history.jsonl',recursive=True)
             if len(found) > 1:
                 raise ValueError('该任务 session 存在多个在线更新目录，请在 S11 指定在线模型目录')
             return found[0].parent if found else None
@@ -41,15 +42,15 @@ def resolve_run(recording, selected=''):
         owner = run_folder(recording.path)
         if owner is not None:
             packaged_refit = owner / 'refit'
-            return packaged_refit if (packaged_refit / 'online_update_swap_history.jsonl').is_file() else None
+            return packaged_refit if archived_logs(packaged_refit,'online_update_swap_history.jsonl') else None
         # Legacy packages keep the XDF in <run>/xdf beside that run's refit.
         xdf_dir = Path(recording.path).parent
         if xdf_dir.name.lower() == 'xdf':
             packaged_refit = xdf_dir.parent / 'refit'
-            if (packaged_refit / 'online_update_swap_history.jsonl').is_file():
+            if archived_logs(packaged_refit,'online_update_swap_history.jsonl'):
                 return packaged_refit
         root = day_folder(recording.path)
-        found = sorted(root.rglob('online_update_swap_history.jsonl')) if root else []
+        found = archived_logs(root,'online_update_swap_history.jsonl',recursive=True) if root else []
     if len(found) > 1:
         raise ValueError('当天存在多个在线更新 session，请在 S11 指定在线模型目录')
     return found[0].parent if found else None
@@ -79,7 +80,7 @@ def manifest(recording, params):
     root = resolve_run(recording, params.get('online_model_dir', ''))
     if root is None:
         return None
-    swaps = [json.loads(line) for line in (root/'online_update_swap_history.jsonl').read_text(encoding='utf-8-sig').splitlines() if line.strip()]
+    swaps = [json.loads(line) for line in archived_logs(root,'online_update_swap_history.jsonl')[0].read_text(encoding='utf-8-sig').splitlines() if line.strip()]
     swaps = [s for s in swaps if s.get('model_name') == 'position_velocity_kf' and
              s.get('auto_swap', {}).get('swaps', {}).get('position_velocity_kf', {}).get('status') == 'applied']
     swaps.sort(key=lambda s: float(s['applied_time']))
@@ -114,7 +115,7 @@ def signature_dependencies(recording, params):
     if files is None:
         return {'status': 'no_model_directory'}
     paths = set(files['weights'] + files['blocks'] + list(files['root'].glob('*.json')) +
-                [files['root']/'online_update_swap_history.jsonl'])
+                archived_logs(files['root'],'online_update_swap_history.jsonl'))
     return dict(directory=str(files['root']), files=[dict(path=str(p), sha256=recording_sha(p)) for p in sorted(paths)])
 
 

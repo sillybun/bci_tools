@@ -58,7 +58,7 @@ def outline_channels(ax, layout, electrode_ids, mask, color='black', lw=0.7):
     values = np.where(mask, 1.0, np.nan)
     grid = layout_grid(layout, electrode_ids, values) if layout is not None else id_grid(electrode_ids, values)
     for r, c in zip(*np.nonzero(grid == 1)):
-        ax.add_patch(Rectangle((c - 0.5, r - 0.5), 1, 1, fill=False, ec=color, lw=lw, zorder=3))
+        ax.add_patch(Rectangle((c - 0.5, r + 0.5), 1, 1, fill=False, ec=color, lw=lw, zorder=3))
 
 
 class Anova(Section):

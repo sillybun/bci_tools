@@ -70,6 +70,9 @@ def recording_label(recording) -> str:
     # Legacy files used run-th70 (etc.) as the condition without a run number.
     run = (f'rec-{_recording_suffix(recording)}' if re.fullmatch(r'th-?\d+(?:\.\d+)?', recording.run, re.IGNORECASE)
            else f'run{recording.run or "—"}')
+    folder_name = getattr(recording, 'run_name', '')
+    if folder_name.startswith(f'run-{recording.run}-'):
+        run = folder_name
     condition = getattr(recording, 'condition', '')
     explicit_tag = getattr(recording, 'header_info', {}).get('condition_tag')
     if explicit_tag is not None:
@@ -91,23 +94,27 @@ def recording_labels(recordings):
             for r, label in zip(recordings, labels)]
 
 
-def recording_label_lines(label):
-    parts = label.split(' · ', 3)
-    display = ' · '.join(parts[:2]) + '\n' + ' · '.join(parts[2:]) if len(parts) == 4 else label
+def single_line_recording_label(label):
+    display = ' '.join(label.splitlines())
+    parts = display.split(' · ', 3)
+    if len(parts) == 4:
+        date, mode, task, run = parts
+        if re.match(rf'run-\d+(?:-[a-z])?-{re.escape(task)}-{re.escape(mode)}(?:-|\s|$)', run, re.IGNORECASE):
+            display = f'{date} · {run}'
     return re.sub(r' \[restrained assist\s*([\d.]+)\]', r' [assist \1]', display)
 
 
 def recording_ticks(ax, positions, labels, *, fontsize=6.5):
     labels = list(labels)
-    ax.set_xticks(positions, [recording_label_lines(label) for label in labels],
-                  rotation=45, rotation_mode='anchor', ha='right',
+    ax.set_xticks(positions, [single_line_recording_label(label) for label in labels],
+                  rotation=90, rotation_mode='default', ha='center', va='top',
                   fontstyle='normal', fontsize=fontsize)
     for tick, label in zip(ax.get_xticklabels(), labels):
         tick.set_color(session_label_color(label))
 
 
 def recording_yticks(ax, labels):
-    ax.set_yticks(range(len(labels)), labels, fontsize=6.5)
+    ax.set_yticks(range(len(labels)), [single_line_recording_label(label) for label in labels], fontsize=6.5)
     for tick, label in zip(ax.get_yticklabels(), labels):
         tick.set_color(session_label_color(label))
 

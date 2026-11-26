@@ -29,7 +29,7 @@ KF 使用稳态解码增益而非观测矩阵。Elec# 为沿杆位置序号，�
 S14 属于慢分析，可单独运行，或勾选包含慢分析后参与批量计算。
 
 S14 第七张图为有效通道深度分布：整段加载的 run 中任意一帧 code > 0 的通道计 1，
-默认按 100 µm 分箱；按 Channel ID 对齐最新 mapping，Shank1 原始深度统一加 106850 µm，保留并纳入统计。深度权重与二值发放分布可用 scripts/export_depth_weights_and_firing.py 导出，code 1/2/3 每帧均计一次事件。
+默认按 100 µm 分箱，并按 Channel ID 对齐最终工作簿的 Shank 与沿轴坐标。深度权重与二值发放分布可用 scripts/export_depth_weights_and_firing.py 导出，code 1/2/3 每帧均计一次事件。
 图中 `single unit count` 沿用参考图标签，统计对象是有效通道，不是 spike sorting 分离的神经元数。
 深度 CSV 的内容纳入 S14 缓存签名，修改后自动重新计算。
 
@@ -91,7 +91,7 @@ Git 跟踪代码、锁文件、文档和获准纳入项目的小型测试样本�
 
 ## 界面
 
-命名备注仅标注有区别的实验条件：有目标辅助时标 `assist-速度`，手束缚时标 `restrained`；普通脑控不再附加 `arm-free` 或 `no-assist`，offline 不再重复附加 `manual`。完整控制参数仍保存在配置和 session_info.json 中。
+命名备注仅标注有区别的实验条件：目标辅助开启时标 `ass速度`，手束缚时标 `restrained`；普通脑控不再附加 `arm-free` 或 `no-assist`，offline 不再重复附加 `manual`。完整控制参数仍保存在配置和 session_info.json 中。
 
 当前统一归档的 20261106 / 20261109 / 20261110 / 20261111 使用扁平目录：`日期/run-001-CO8或Grid-online或offline-note/` 下直接放 `xdf/`、`behavior/`、`config/`、`logs/`、`initial_weights/`、`refit/` 及说明。拆分保留来源 run 编号，按 session 时间顺序增加字母，例如 `run-006-a-CO8-online-note`、`run-006-b-Grid-online-note`、`run-006-c-Grid-online-note`。XDF 文件也以同一 run 名开头，再附加日期、rec 编号、片段类型及信号类型。一个 run 对应一个任务 session，其身份和分段信息保存在根目录 `session_info.json`，不再增加 `sessions/session-…` 两层。旧命名和嵌套目录仍兼容；GUI 的 Run 列保留 `006-a/b/c`。`scripts/rename_run_first.py` 为这次名称迁移工具，`scripts/flatten_run_sessions.py` 为目录提升工具；历史审计保留原样，当前名称见每日索引和最新 `run_naming_audit_*`。
 
@@ -101,7 +101,7 @@ Git 跟踪代码、锁文件、文档和获准纳入项目的小型测试样本�
   「停止当前」直接终止当前分析进程，之后继续执行等待任务；「清空待执行」只移除等待任务。任务队列窗口显示每项状态和进度，双击可核对提交时的设置；「日志」查看输出。关闭程序会停止当前任务并清空等待任务，队列不跨重启恢复；已完整保存的结果保留，中断的 partial 结果不作为有效缓存。
 - **标题栏**：`单记录分析 Single-session` / `跨记录分析 Cross-session`；`⚡ 一键计算 Compute All` 在后台运行当前模式下的全部分析项目
 - **跨记录一键报告**：勾选记录后点击「一键报告」，按数据与实验范式、通道稳定性、通讯稳定性、离线解码、在线 CO8 行为、在线 Grid 行为六类整理 PNG。原计算目录保持不变，额外副本保存到 `E:\AitBCI\data_analysis_gui_output\keaiduo\report\起始日期_结束日期_Nruns_v1`，同日期范围和run数量再次生成时递增版本。离线解码仅使用离线 CO8/Grid，在线行为仅使用对应在线记录；缺少某类记录时明确跳过，计算失败时保留可用图片并标记未完成。「报告文件夹」可打开最近生成的报告；`report.json` 记录所选记录、来源和生成状态。
-- **报告空间图**：X01 同时导出 default 电极 ID 网格与 physical 真实排列；真实排列优先采用最新日期的天枢 mapping。新增 `07_方向调谐_S05` 和 `08_解码权重_S14`，均包含 `runs` 与 `summary_all_runs`。S05 输出 tuning 的 mean/median；S14 输出 |wx|、|wy|、norm 的 mean/median 和深度权重/二值事件率分布。支持 Electrode #、Depth、去掉 Shank1 的 7shank（保留2～8编号）。深度使用 corrected CSV，Shank1 +106850 µm；summary只包括本次勾选记录，缺测排除，未检验不当作未调谐。S14 沿用本报告 S10 参数独立拟合。
+- **报告空间图**：X01 同时导出 default 电极 ID 网格与 physical 真实排列；真实排列采用 TS3.0_ChannelMap_Final.xlsx。新增 `07_方向调谐_S05` 和 `08_解码权重_S14`，均包含 `runs` 与 `summary_all_runs`。S05 输出 tuning 的 mean/median；S14 输出 |wx|、|wy|、norm 的 mean/median 和深度权重/二值事件率分布。支持 Electrode #、Depth、去掉 Shank1 的 7shank（保留2～8编号）。轴向距离取自最终工作簿；summary只包括本次勾选记录，缺测排除，未检验不当作未调谐。S14 沿用本报告 S10 参数独立拟合。
   （单日：所选多份记录各自的全部单日 section，勾选全部记录选项则使用所有可见记录；跨天：当前勾选记录 × 全部跨天 section）。
   S08 需要通道配置 INI 或 Neuralinsight 日志、S11 只对 online 记录运行，不满足时自动跳过。计算期间可继续浏览，完成一项显示一项。
 - **Topbar · Preprocessing**：数据目录与数据类型（CO8 / Grid / CO8 online / Grid online）、
@@ -113,6 +113,8 @@ Git 跟踪代码、锁文件、文档和获准纳入项目的小型测试样本�
 - **跨天工作台**：上方记录勾选表 + 日期时间轴（全选 / 仅离线 / 每天第一份），下方每个跨天 section 一个标签页。
 - **结果查看**：每张图以 300 dpi PNG 预览（适应宽度 / 整页 / 100%，Ctrl+滚轮缩放、拖动平移），
   按钮打开 PNG / SVG / PDF / CSV、绘图数据表、「计算方式」和结果文件夹；另有 Summary 与统一的 Table View 标签页，所有结果表通过 Prev / Next 和下拉框切换，按需加载。
+
+一键报告默认在所勾选的记录中保留有可读 XDF 且 Trial 数严格大于 50 的 run。优先采用可匹配的行为 CSV，缺失或无效时按 XDF 事件中的完整 trial 计数。同一 run 的匹配 CSV 与 XDF 分段分别提供计数来源，有可用 CSV 时取 CSV 计数。报告的 `run_filter` 记录排除原因，每日 BGA 和控制对比也遵守筛选。需要恢复原选择方式时，取消一键报告的筛选勾选。
 
 ## 计算与存储（优先读取存储结果，缺失时才计算）
 
@@ -299,7 +301,7 @@ S13保留原任务block成功率和到靶时间统计。所有BPS使用累计60�
 
 X08按run汇总60秒、step 1秒窗口的median/IQR和peak（整个run不足60秒时用实际全程窗口折算）；Grid采用横向A4比例上下两个子图并共用run横轴：上图为蓝色BPS分布及橙色peak，下图为橘色成功trial到靶时间median/IQR（秒），均保留数值标注。峰值明细导出有效时间范围、trial范围。已不再输出原先按block或整场计算的BPS图；成功率和到靶时间保持原统计口径。一键报告使用相同规则。
 
-一键报告追加离线行为目录 `09_离线行为_Grid_BPS_TTT` / `10_离线行为_CO8_BPS_TTT`：直接读取所选 run 的 trials.csv，可在日期范围报告中纳入无 XDF 的 run。每 run 输出 block 成功率/TTT、完整 60 秒有效任务时间窗口 BPS、成功 trial 的 TTT 分布；summary_all_runs 汇总各 run 的 BPS median/IQR/peak 和 TTT。空记录标为不可计算；不足 60 秒的整个 run 按实际时长 ratio 折算，长 run 从第 60 秒起按 1 秒步长滑动。电极位置图和 elec_index 统一为 0–127；Shank 保留 1–8，深度轴仍使用 µm。
+一键报告追加离线行为目录 `09_离线行为_Grid_BPS_TTT` / `10_离线行为_CO8_BPS_TTT`：直接读取所选 run 的 trials.csv，可在日期范围报告中纳入无 XDF 的 run。每 run 输出 block 成功率/TTT、完整 60 秒有效任务时间窗口 BPS、成功 trial 的 TTT 分布；summary_all_runs 汇总各 run 的 BPS median/IQR/peak 和 TTT。空记录标为不可计算；不足 60 秒的整个 run 按实际时长 ratio 折算，长 run 从第 60 秒起按 1 秒步长滑动。电极位置图和 elec_index 统一为 1–128；Shank 保留 1–8，深度轴仍使用 µm。
 
 导出字号固定：分析图标题 18 pt、坐标及色条标签 14 pt、刻度与图例 11 pt，不随旧字号百分比叠加。记录/实验范式示意图（X00、Session Overview）保留原有样式，不套用此规则；长标题自动换行。PNG、SVG、PDF 和一键报告共用该导出规则。
 
@@ -309,4 +311,56 @@ X08按run汇总60秒、step 1秒窗口的median/IQR和peak（整个run不足60�
 
 缓存池先按 section 分类（`S05`、`S14`、`BGA`、`BPS_TTT` 等），再按 `日期_run编号_任务` 分类。每个 run 下按分析类型和输入/参数版本保存；版本内 `figures/` 存放图片，`data/` 存放 CSV、计算结果和绘图数据，`entry.json` 记录来源、参数和校验信息。打开该 run 的 `index.html` 可浏览图片并获取生成数据；`index.json` 提供机器可读索引。不同设置的版本分别保留，避免错误复用。
 
-X10「脑控与离线摇杆 BPS / TTT 配置对照」读取所选日期范围内的正式编号 run，包含只有 CSV 的日期，默认排除 1116。蓝色圆点为脑控、橙色方点为离线摇杆；Grid 与 CO8 分开比较。BPS 采用共用 60 秒有效尝试时长、1 秒步长缓存；TTT 对成功 trial 仅计一次。一键报告新增 `11_脑控与离线摇杆_BPS_TTT/summary_all_runs`，包含跨日期与逐日图、逐 run 统计 Excel、当天配置变化、全部字段完整配置对比（相同设置也保留），用日期/任务/run 和图编号对应。Excel 由 Codex bundled Artifact Tool 导出，支持 `AITBCI_ARTIFACT_NODE` / `AITBCI_ARTIFACT_MODULES` 路径覆盖。
+X10「脑控与离线摇杆 BPS / TTT 配置对照」读取所选日期范围内的正式编号 run，包含只有 CSV 的日期，默认排除 1116。蓝色圆点为脑控、橙色方点为离线摇杆；Grid 与 CO8 分开比较。BPS 采用共用 60 秒有效尝试时长、1 秒步长缓存；TTT 对成功 trial 仅计一次。一键报告新增 `11_脑控与离线摇杆_BPS_TTT/summary_all_runs`，包含一张 Grid 与 CO8 共用横轴的全 run BPS / TTT 图、逐 run 统计 Excel、当天配置变化、全部字段完整配置对比（相同设置也保留），用日期/任务/run 和图编号对应。总图使用各任务原有 BPS 口径，CO8 采用 Neuralink-style，Wolpaw 和 Fitts 保留在统计表。Excel 由 Codex bundled Artifact Tool 导出，支持 `AITBCI_ARTIFACT_NODE` / `AITBCI_ARTIFACT_MODULES` 路径覆盖。
+
+## Keaiduo 命名与配置审计
+
+顶栏「重命名文件夹…」可选择当前数据目录内的子文件夹，同时查看原名和建议名。
+可直接编辑建议名，或在备注栏追加内容，确认后刷新记录列表。操作只更改所选文件夹的名称，
+内部文件名与配置文件保持原样。正在执行或等待分析时，先结束相关任务，避免队列引用旧路径。
+
+批量核对时可先生成预览：
+
+```powershell
+uv run --locked python scripts/audit_keaiduo_archive.py --data D:/AitBCI/keaiduo --out D:/AitBCI/data_analysis_gui_output/keaiduo/naming_config_review
+```
+
+审计输出逐 run 命名、XDF 信号证据、配置原始字段和逐份配置新增／缺失／值变化。已有正式 run 编号和拆分字母保留，
+其余会话按日期内目录顺序预分配空闲编号。无配置、读不到信号流或出现命名冲突时，先核对审计结果。
+明确标注 LFP 的记录保留 LFP；确认有 spike 计数流的 XDF 将文件名中的 eeg 改为 spike。审计命令只读原始数据。
+归档 XDF 在原目录内使用短名，例如 `xdf/rec-001-spike.xdf` 或 `xdf/rec-001-lfp.xdf`，
+同一 run 有多份 XDF 时递增录制序号，特殊分段可保留 `early`、`startup` 或 `aux`。
+完整实验条件和日期由上层目录提供，在线状态还会结合 decoder 流。迁移时同步归档元数据中的录制路径，
+原始来源字段保留。将数据目录复制到另一台电脑时一起复制 `.xdf_name_map.json`，供旧目录结构恢复历史 run 身份。
+短文件名会产生新的结果缓存签名，既有结果和报告保留；报告的 `xdf_paths_after_rename.csv` 可用来查找迁移后的本机来源。
+运行日志使用 `<run名>--<原日志文件名>`，GUI 兼容迁移前后的日志命名。
+
+命名基础为 `run-NNN-任务-online/offline`，标签依次为尺寸、`sp`、`bc`、`dw`、`nextT`、`nearby`、`ass`。Grid 尺寸取 `GRID_ROWS` / `GRID_COLS`，`sp021` 取
+`CONTROL.POS_SCALE_FACTOR=0.021`，`nearby3` 表示邻近辅助开启且 `NEARBY_TARGET_ASSIST_RADIUS=3`（模式 3，7×7）。模式 1、2、3 分别对应 3×3、5×5、7×7。
+`dw001` 表示 `DWELL_TIME_SEC=0.01` 秒，`dw020` 表示 0.20 秒，已保存的 dwell 值都显示。`nextT` 表示 `PREVIEW_NEXT_TARGET=true`，
+`bc125` 表示在线 `BCI_VELOCITY_SCALE=1.25`，1 倍省略。`ass150` 表示 `BCI_TARGET_ASSIST_ENABLED=true` 且 `BCI_TARGET_ASSIST_SPEED=150.0` px/s，目标辅助关闭时省略。配置未保存的字段保留缺失状态。
+X10 Excel 将这些字段放在行为指标之前，保留完整配置，并按时间列出新增、缺失和变化。
+物理布局可继续使用外部 `天枢3.0_ChannelMap20261122.xlsx`，SHA-256 为
+`5164b80e417a1b42ec89756b0a67e553f19c9064a829984110bf1fb2a856a2df`。命名与配置审计本身不需要布局表。
+
+
+### 最终通道映射与逐日汇总
+
+GUI 默认从数据根目录的 `channel_layout/TS3.0_ChannelMap_Final.xlsx` 读取物理布局。一键报告要求此表并使用其总表的 Shank 和柄内位点，以及「Fanin芯片BGA位点对应」工作表的 BGA 位置。本机文件 SHA-256 为 `459e3e845b2b6a7adecb15f3d0783fe7c69a78540d4941ffbece22642516ceec`，报告清单记录实际使用的校验值。物理位点按工作簿编号显示为 1–128，Shank 显示为 1–8。轴向图使用工作簿 Y 坐标距各 Shank 第一个位点的距离（µm），属于芯片几何坐标。GUI 中可显式选择其他布局进行对照。
+
+图中的 run 标签按单行显示，长横轴标签竖排。S05 和 S14 新增 `summary_by_day/YYYY-MM-DD`。同一 run 的多个 XDF 先合并到 run 均值，再按日期等权汇总。S05 仅汇总有效检验的二元显著性。S14 对每个日期、通道和权重指标，在至少 4 个有限 run 值且 IQR 大于 0 时剔除 1.5×IQR 界限之外的观测；`excluded_outliers.csv` 记录剔除项，`channel_statistics.csv` 提供均值、中位数和有效 run 数。
+
+
+### 中文图表导出验收
+
+- 在导出电脑上安装支持中文的字体，Windows 优先使用 Microsoft YaHei，其他环境可安装 Noto Sans CJK SC。安装后重新启动 GUI 或报告 worker，让 Matplotlib 重新扫描系统字体。
+- PNG、PDF 和 SVG 导出遇到缺字会立即失败并给出字符和目标路径。导出写入临时文件，通过后才替换目标图。中文 SVG 使用字形轮廓，接收方打开图时无需安装同款字体。
+- 一键报告对照目录保留 Excel 和一张总图。验收时打开工作簿核对中文表头及说明。
+- 修改字体、绘图或运行环境后运行 `python -m pytest -q tests/test_fixed_font_policy.py tests/test_control_comparison.py`，并抽查最长 run 标签与中文说明之间的留白。出现缺字时修复导出机字体后重跑失败项。
+
+离线解码汇总图 `Velocity.png` 额外要求各录制通过 S10 筛选的 trial 数大于 50，并且至少一个模型的 R² 有效。原始行为 CSV 的 trial 数用于一键报告的 run 入选检查。
+
+Grid 的 BPS / TTT run 图按日期分段，下方表格按 run 对齐保存的配置。Cursor Speed 以归档中的 POS_SCALE_FACTOR 0.012 为 ×1；BC Speed 以 1.00 为 ×1；Nearby 半径 1、2、3 分别显示 3×3、5×5、7×7；在线图列出开启时的初始 Assist Speed（px/s）。配置未记录的项目显示 —。2026-11-11 归档缺少 Next Target 和 Nearby Target 标志时，按已确认的设置显示 Off。
+
+
+一键报告也会在各分类的 `summary_all_runs` 导出每日方向调谐数量箱线图、单独的 Shank 位点图和离线双向定位的 BGA 映射 HTML、X/Y R² 独立趋势及 Vel-KF 双线趋势（按 run、按天、按天半宽），以及在线 Grid 的 Assist Off 图。R² 趋势沿用 S10 有效 trial 数大于 50 的筛选，同一 run 的有效录制先等权合并；逐日图显示中位数和 Q1–Q3。Assist Off 图只使用配置明确关闭辅助的 run。补图路径记录在 `report.json` 的 `supplementary_files`。S14 继续按选中日期生成逐日汇总，历史单独补画的 2026-11-10 不会进入未选中该日的新报告。

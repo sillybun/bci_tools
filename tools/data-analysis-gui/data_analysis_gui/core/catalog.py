@@ -10,6 +10,8 @@ import re
 import xml.etree.ElementTree as ET
 
 from ..config import DECODER_STREAM, REQUIRED_STREAMS
+from .archive_logs import archived_logs
+from .archive_names import archived_recording_alias
 from .xdf_io import read_headers, spike_stream_aliases
 
 DATA_TYPES = ('CO8', 'Grid', 'CO8 online', 'Grid online')
@@ -64,9 +66,21 @@ class Recording:
         return day_config_path(self.path)
 
     @property
+    def run_name(self) -> str:
+        folder = run_folder(self.path)
+        if folder is None:
+            return f'run-{self.run}'
+        match = RUN_PREFIX.match(folder.name)
+        if match:
+            from .run_config import configured_run_name
+            return configured_run_name(folder, match['number'], match['task'], match['mode'],
+                                       part=match['part'])
+        return folder.name
+
+    @property
     def label(self) -> str:
         suffix = f' · {self.condition}' if self.condition else ''
-        return f'{self.date} · {self.data_type} · run-{self.run}{suffix}'
+        return f'{self.date} · {self.data_type} · {self.run_name}{suffix}'
 
 
 def run_folder(path: Path) -> Path | None:
@@ -135,9 +149,9 @@ def day_config_path(path) -> str:
         if len(candidates) == 1:
             return str(candidates[0])
     for location in locations:
-        standard = location / 'Neuralinsight.log'
-        if standard.is_file():
-            return str(standard)
+        standard = archived_logs(location, 'Neuralinsight.log')
+        if len(standard) == 1:
+            return str(standard[0])
         candidates = [p for p in location.glob('Neuralinsight_*.log') if p.is_file()
                       and re.fullmatch(r'Neuralinsight_\d{8}', p.stem, re.I)
                       and (p.stem[-8:] == date if len(date) == 8 else p.stem[-4:] == date)]
@@ -165,9 +179,17 @@ def _run_label(path: Path) -> str:
 
 
 def describe(path: Path, root: Path) -> Recording:
-    date, run = recording_date(path), _run_label(path)
+    date = recording_date(path)
+    owner = run_folder(path)
+    canonical = RUN_PREFIX.match(owner.name) if owner else None
+    alias = archived_recording_alias(path)
+    run = (alias.get('previous_run') if not canonical else None) or _run_label(path)
     relative = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
-    name_online = 'online' in path.stem.lower() or 'online' in path.parent.name.lower()
+    name_online = ('online' in path.stem.lower() or 'online' in path.parent.name.lower() or
+                   (canonical is not None and canonical['mode'].lower() == 'online') or
+                   (owner is not None and canonical is None and
+                    bool(re.search(r'(?:^|[-_])online(?:[-_]|$)', owner.name, re.I))) or
+                   bool(alias.get('previous_online')))
     try:
         headers = read_headers(path)
     except (OSError, ValueError, ET.ParseError) as exc:

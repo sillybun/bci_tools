@@ -39,8 +39,8 @@ def write_layout(path, *, duplicate=False, shared=False, electrode_base=1):
     return path
 
 
-def write_depth_csv(path):
-    positions = read_layout()['position']
+def write_depth_csv(path, layout=None):
+    positions = (layout or read_layout())['position']
     inverse = {(int(r),int(c)):ch for ch,(r,c) in enumerate(positions)}
     names = [name for i in range(1,9) for name in (f'shank{i}_ID',f'shank{i}_depth_um')]
     with path.open('w',newline='',encoding='utf-8') as f:
@@ -128,10 +128,10 @@ def test_s14_six_figures_with_s10_parameters_and_exact_exported_values(tmp_path,
     from data_analysis_gui.sections.guide import load_guide, figure_guide
     params = {'decoder': decoder, '_source_sections': {
         's10': {'version': 'v1', 'params': {'bin': .2, 'n_bins': 4, 'lam_ridge': .3}}}}
-    params['depth_csv']=str(write_depth_csv(tmp_path/'depth.csv'))
+    mapping = write_layout(tmp_path / 'mapping.xlsx')
+    params['depth_csv']=str(write_depth_csv(tmp_path/'depth.csv', read_layout(mapping)))
     session = make_session(n_blocks=3)
-    ctx = build_context([session], TrialFilter(), params, SECTION,
-                        layout_path=write_layout(tmp_path / 'mapping.xlsx'))
+    ctx = build_context([session], TrialFilter(), params, SECTION, layout_path=mapping)
     result = run_section(SECTION, ctx)
     try:
         assert len(result.figures) == 7
@@ -177,7 +177,7 @@ def test_all_six_plots_use_absolute_reversed_hot_0_25_without_position_groups(tm
             ax = fig.axes[0]
             im = ax.images[0]
             assert im.cmap.name == 'hot_r' and im.get_clim() == (0., 25.)
-            assert im.origin == 'lower' and ax.get_ylim() == (0, 127)
+            assert im.origin == 'lower' and ax.get_ylim() == (.5, 128.5)
             def luminance(value):
                 return np.dot(im.cmap(im.norm(value))[:3], [.2126, .7152, .0722])
             assert luminance(0) > luminance(12.5) > luminance(25)
@@ -252,7 +252,7 @@ def test_shank1_depth_offset_preserves_latest_mapping_order(tmp_path):
     positions=read_layout()['position']
     for ch,d in depths.items():
         assert d['shank']==int(positions[ch,1])+1
-        assert d['elec_index']==int(positions[ch,0])
+        assert d['elec_index']==int(positions[ch,0])+1
         assert d['depth_offset_um']==(106850 if d['shank']==1 else 0)
         assert d['depth_um']==d['depth_original_um']+d['depth_offset_um']
     shank1=[ch for ch,d in depths.items() if d['shank']==1]
@@ -265,4 +265,4 @@ def test_layout_numbering_bases_preserve_physical_positions(tmp_path):
     b = read_layout(write_layout(tmp_path/'one.xlsx', electrode_base=1))
     np.testing.assert_array_equal(a['position'], b['position'])
     assert a['electrode_index_base'] == 0 and b['electrode_index_base'] == 1
-    assert '127 tip' in a['row_label']
+    assert a['row_label'] == b['row_label'] == 'Electrode #'

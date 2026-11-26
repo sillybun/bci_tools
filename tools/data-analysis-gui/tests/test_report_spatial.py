@@ -1,6 +1,6 @@
 """Spatial report aggregation, missingness, and physical/depth coordinate contracts."""
 import numpy as np
-from data_analysis_gui.report_spatial import channel_statistics,depth_bins,sites_figure
+from data_analysis_gui.report_spatial import channel_statistics,daily_channel_statistics,depth_bins,sites_figure
 from data_analysis_gui.reporting import report_plan,SPATIAL_CATEGORIES
 from data_analysis_gui.core.catalog import Recording
 from data_analysis_gui.core.channels import read_layout
@@ -28,7 +28,7 @@ def test_7shank_exclusion_happens_before_profile_means():
     assert eight[1]['vx']==51 and seven[1]['vx']==2 and seven[1]['event_hz']==6
 
 def test_depth_plot_shanks_2_to_8_keep_channel_identity_and_lower_origin():
-    layout=read_layout();depths=load_depths(C.DEFAULT_DEPTH_CSV);v=np.arange(1024,dtype=float)
+    layout=read_layout();depths=load_depths("", layout=layout);v=np.arange(1024,dtype=float)
     fig=sites_figure(layout,depths,v,'Test',seven=True,limits=(0,1023))
     ax=fig.axes[0]
     assert list(ax.get_xticks())==list(range(2,9)) and ax.get_xlim()==(1.5,8.5)
@@ -49,26 +49,26 @@ def test_report_plans_all_run_s05_s14_and_forces_dual_x01(tmp_path):
         if s.id=='s14':assert p['_source_sections']['s10']['params']['lam_ridge']==7
 
 
-def test_electrode_axis_is_zero_to_127_and_values_follow_positions():
-    layout=read_layout();depths=load_depths(C.DEFAULT_DEPTH_CSV)
+def test_electrode_axis_is_one_to_128_and_values_follow_positions():
+    layout=read_layout();depths=load_depths("", layout=layout)
     values=layout['position'][:,0].astype(float)
     fig=sites_figure(layout,depths,values,'Positions',depth=False,limits=(0,127))
     ax=fig.axes[0]
-    assert ax.get_ylim()==(0,127)
-    assert list(ax.get_yticks())==[0,16,32,48,64,80,96,112,127]
+    assert ax.get_ylim()==(.5,128.5)
+    assert list(ax.get_yticks())==[1,16,32,48,64,80,96,112,128]
     for mesh in ax.collections:
         np.testing.assert_equal(np.asarray(mesh.get_array()).ravel(),np.arange(128))
     fig.clear()
 
 
-def test_x01_both_layouts_display_shared_zero_based_axis():
+def test_x01_both_layouts_display_shared_one_based_axis():
     from data_analysis_gui.sections.x01_channel_stability_v1.section import SECTION
     for layout in (None,read_layout()):
         fig=SECTION.maps(layout,{'max':np.zeros((2,1024))},['run001','run002'],{'map_quantity':'max_code'})
         ax=fig.axes[0]
-        assert ax.get_ylim()==(0,127)
-        assert ax.get_yticklabels()[0].get_text()=='0'
-        assert ax.get_yticklabels()[-1].get_text()=='127'
+        assert ax.get_ylim()==(.5,128.5)
+        assert ax.get_yticklabels()[0].get_text()=='1'
+        assert ax.get_yticklabels()[-1].get_text()=='128'
         fig.clear()
 
 
@@ -96,9 +96,20 @@ def test_run_export_switch_preserves_summary_numbers(tmp_path,monkeypatch):
     data=[]
     for include in (False,True):
         out=tmp_path/str(include);out.mkdir()
-        meta=module.render_report_spatial(out,entries,dict(recordings=[{},{}],include_run_exports=include),100,lambda *a,**k:None)
+        meta=module.render_report_spatial(out,entries,dict(recordings=[dict(path=f"run{i}.xdf", date="2026-11-18", run_group=f"run{i}") for i in range(2)],include_run_exports=include),100,lambda *a,**k:None)
         data.append(storage.read_table(out/SPATIAL_CATEGORIES[0]/'summary_all_runs/channel_tuning_statistics.csv',limit=2000))
         assert bool(list(out.rglob('runs')))==include
-        if not include:assert all('summary_all_runs' in p for p in meta['pngs'])
+        if not include:assert all('summary_all_runs' in p or 'summary_by_day' in p for p in meta['pngs'])
     assert data[0]==data[1]
     assert float(data[0][0]['tuning_mean'])==.5
+
+
+def test_daily_weight_summary_excludes_outlier_after_combining_recordings():
+    def recording(value):
+        return [dict(channel_0based=0,vx=value)]
+    runs = dict(a=[recording(0),recording(2)], b=[recording(2)],
+                c=[recording(3)], d=[recording(100)], e=[recording(2)])
+    stats, counts, exclusions = daily_channel_statistics(runs, ('vx',), trim_weights=True)
+    assert stats['mean'][0,0] == stats['median'][0,0] == 2
+    assert counts[0,0] == 4
+    assert [(r['run'],r['value']) for r in exclusions] == [('d',100)]

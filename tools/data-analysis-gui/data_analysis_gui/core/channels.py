@@ -36,6 +36,18 @@ def _read_layout(path: str, mtime: float) -> dict:
         if 'xl/sharedStrings.xml' in archive.namelist():
             shared = ET.fromstring(archive.read('xl/sharedStrings.xml'))
             strings = [''.join(t.text or '' for t in item.findall('.//m:t', NS)) for item in shared]
+    raw_cells = _workbook_cells(root, strings)
+    if [raw_cells.get(f'{col}2') for col in ('A', 'I', 'J', 'L')] == ['通道号', '柄号', '柄内位点序号', '电极位点 Y (mm)']:
+        with zipfile.ZipFile(path) as archive:
+            bga_sheet = next(sheet for sheet in workbook.findall('m:sheets/m:sheet', NS) if sheet.get('name') == 'Fanin芯片BGA位点对应')
+            target = next(r.attrib['Target'] for r in rels if r.attrib['Id'] == bga_sheet.attrib[REL])
+            target = target.lstrip('/') if target.startswith('/') else 'xl/' + target
+            bga_cells = _workbook_cells(ET.fromstring(archive.read(target)), strings)
+        return _final_layout(path, raw_cells, bga_cells)
+    return _legacy_layout(path, root, raw_cells)
+
+
+def _workbook_cells(root, strings):
     raw_cells = {}
     for cell in root.findall('.//m:sheetData/m:row/m:c', NS):
         value = cell.find('m:v', NS)
@@ -44,6 +56,45 @@ def _read_layout(path: str, mtime: float) -> dict:
                 else strings[int(value.text)] if kind == 's' and value is not None
                 else value.text if value is not None else '')
         raw_cells[cell.attrib['r']] = text
+    return raw_cells
+
+
+def _final_layout(path, cells, bga_cells):
+    position = np.full((C.N_ELECTRODES, 2), -1, int)
+    y_mm = np.full(C.N_ELECTRODES, np.nan)
+    for row in range(3, C.N_ELECTRODES + 3):
+        channel = int(cells[f'A{row}'])
+        shank = int(re.fullmatch(r'S([1-8])', cells[f'I{row}'])[1]) - 1
+        site = int(cells[f'J{row}']) - 1
+        if not 0 <= channel < C.N_ELECTRODES or not 0 <= site < 128 or position[channel, 0] != -1:
+            raise ValueError(f'最终映射表第 {row} 行通道或位点无效')
+        position[channel] = (site, shank)
+        y_mm[channel] = float(cells[f'L{row}'])
+    if len(set(map(tuple, position))) != C.N_ELECTRODES or not np.isfinite(y_mm).all():
+        raise ValueError('最终映射表需覆盖 1024 个唯一电极位点及有限的 Y 坐标')
+    bga = np.full_like(position, -1)
+    for address, value in bga_cells.items():
+        match = re.fullmatch(r'([A-Z]+)([0-9]+)', address)
+        col, row = match[1], int(match[2])
+        if not 2 <= row <= 31 or not (col + '1' in bga_cells) or not bga_cells[col + '1'].isdigit() or not (value or '').isdigit():
+            continue
+        col_index, channel = 39 - int(bga_cells[col + '1']), int(value)
+        if not 0 <= channel < C.N_ELECTRODES or not 1 <= col_index <= 38 or bga[channel, 0] != -1:
+            raise ValueError(f'最终映射表 BGA 位点无效：{address}')
+        bga[channel] = (row - 1, col_index)
+    if (bga < 0).any() or len(set(map(tuple, bga))) != C.N_ELECTRODES:
+        raise ValueError('最终映射表需覆盖 1024 个唯一 BGA 位点')
+    distance = np.empty_like(y_mm)
+    for shank in range(8):
+        sites = position[:, 1] == shank
+        origin = y_mm[(position[:, 0] == 0) & sites].item()
+        distance[sites] = np.round(np.abs(y_mm[sites] - origin) * 1000, 6)
+    return dict(source=path, rows=128, columns=8, position=position, kind='shank_table',
+                bga_position=bga, axial_distance_um=distance, row_label='Electrode #',
+                column_label='Shank', index_base=0, electrode_index_base=1)
+
+
+def _legacy_layout(path, root, raw_cells):
     # New Tianshu workbooks are channel tables, not 128x8 numeric matrices.
     if [raw_cells.get(f'{col}1') for col in 'ABC'] == ['Channel#', 'Shank', 'Elec#']:
         position = np.full((C.N_ELECTRODES, 2), -1, int)
@@ -86,7 +137,7 @@ def _read_layout(path: str, mtime: float) -> dict:
                     or len(set(map(tuple,bga))) != C.N_ELECTRODES):
                 raise ValueError('BGA 坐标需覆盖 1024 个唯一位点，行1–30、列1–38')
         return dict(source=path, rows=128, columns=8, position=position, kind='shank_table', bga_position=bga,
-                    row_label='Elec# (0 near fan-in; 127 tip)', column_label='Shank', index_base=0,
+                    row_label='Electrode #', column_label='Shank', index_base=0,
                     electrode_index_base=electrode_base)
     cells = []
     for cell in root.findall('.//m:sheetData/m:row/m:c', NS):
@@ -133,7 +184,7 @@ def id_grid(electrode_ids, values, total=C.N_ELECTRODES, n_cols=8) -> np.ndarray
 
 
 def layout_grid(layout, electrode_ids, values) -> np.ndarray:
-    """Rows indexed by position 0–127; plots place row 0 at the bottom."""
+    """Internal array rows are zero-based; displayed electrode sites start at 1."""
     grid = np.full((layout['rows'], layout['columns']), np.nan)
     pos = layout['position'][np.asarray(electrode_ids) - 1]
     grid[pos[:, 0], pos[:, 1]] = values
@@ -142,6 +193,15 @@ def layout_grid(layout, electrode_ids, values) -> np.ndarray:
 
 CELL_EDGE_COLOR = (0.5, 0.5, 0.5, 0.35)     # faint mid grey: visible on white and on black cells
 CELL_EDGE_LW = 0.25
+ELECTRODE_SITE_TICKS = (1, 16, 32, 48, 64, 80, 96, 112, 128)
+
+
+
+def add_missing_sites_key(colorbar_ax, color):
+    from matplotlib.patches import Patch
+
+    colorbar_ax.legend(handles=[Patch(facecolor=color, edgecolor='none', label='Grey: no data')],
+                      loc='upper center', bbox_to_anchor=(.5, -.035), frameon=False)
 
 
 def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', norm=None,
@@ -160,10 +220,11 @@ def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', 
         ylabel = layout.get('row_label', 'Workbook row')
     else:
         grid = id_grid(electrode_ids, values)
-        ylabel = 'Row'
+        ylabel = 'Electrode #'
     image = ax.imshow(np.ma.masked_invalid(grid), aspect='equal', cmap=cmap, norm=norm,
-                      interpolation='nearest', origin='lower')
-    ticks = np.unique(np.r_[np.arange(0, grid.shape[0], 16), grid.shape[0]-1])
+                      interpolation='nearest', origin='lower',
+                      extent=(-.5, grid.shape[1]-.5, .5, grid.shape[0]+.5))
+    ticks = np.unique(np.r_[1, np.arange(16, grid.shape[0], 16), grid.shape[0]])
     ax.set_xticks([])
     ax.spines['bottom'].set_visible(False)
     if show_labels:
@@ -174,7 +235,7 @@ def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', 
         ax.spines[:].set_visible(False)
     if cell_edges:      # faint border around every cell so rows/columns are easy to follow
         ax.set_xticks(np.arange(-0.5, grid.shape[1]), minor=True)
-        ax.set_yticks(np.arange(-0.5, grid.shape[0]), minor=True)
+        ax.set_yticks(np.arange(.5, grid.shape[0]+1), minor=True)
         ax.tick_params(which='minor', length=0)
         ax.grid(False, which='major')
         ax.grid(True, which='minor', color=CELL_EDGE_COLOR, lw=CELL_EDGE_LW)
@@ -186,7 +247,7 @@ def draw_channel_map(ax, electrode_ids, values, *, layout=None, cmap='viridis', 
         cb.ax.tick_params(labelsize=6)
         if cbar_label:
             cb.set_label(cbar_label, fontsize=7)
-    ax.set_ylim(0, grid.shape[0]-1)
+    ax.set_ylim(.5, grid.shape[0]+.5)
     return image
 
 

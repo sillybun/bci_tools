@@ -8,7 +8,7 @@ Ridge 取标准化特征的系数。KF 取稳态神经输入增益 K 乘训练�
 
 图和 CSV 的 vx、vy 均为绝对值。原始带符号系数另存 vx_signed、vy_signed。norm = sqrt(wx² + wy²)，取绝对值不改变 norm。灰色仅表示未传输；输入恒定而被剔除的通道权重为零，显示白色。其他非常数通道也可能有零或很小的权重，不能把白色统称为没有信息。
 
-Channel# 为 XDF 电极 ID 减一。Shank 为 1–8，Elec# 为 0–127，0 靠近 fan-in、127 靠近尖端。Elec# 是位置序号，没有植入方向与毫米深度标定时不能推断脑内解剖深度。
+Channel# 为 XDF 电极 ID 减一。Shank 为 1–8，Electrode # 为工作簿位点编号 1–128。Elec# 是位置序号，没有植入方向与毫米深度标定时不能推断脑内解剖深度。
 
 ## 图 1：vx weighting heatmap
 

@@ -187,6 +187,7 @@ class App(tk.Tk):
         row.grid(row=0, column=2, sticky='w')
         ttk.Button(row, text='选择…', command=self.choose_root).pack(side='left')
         ttk.Button(row, text='刷新', command=self.refresh_recordings).pack(side='left', padx=4)
+        ttk.Button(row, text='重命名文件夹…', command=self.rename_data_folder).pack(side='left')
         ttk.Label(row, text='   数据类型').pack(side='left')
         self.type_vars = {}
         for t in DATA_TYPES:
@@ -310,7 +311,7 @@ class App(tk.Tk):
         self.layout_entry.state([state])
         self.layout_button.state([state])
         self.layout_hint.configure(text='' if self.use_layout.get() else
-                                   '未选中：按电极 ID 排在 128 行 × 8 列，行位置统一为 0–127')
+                                   '未选中：按电极 ID 排在 128 行 × 8 列，行位置显示为 1–128')
 
     def layout_toggled(self):
         self._layout_state()
@@ -322,6 +323,26 @@ class App(tk.Tk):
         if folder:
             self.data_root.set(folder)
             self.refresh_recordings()
+
+    def rename_data_folder(self):
+        from .rename_folder import RenameFolderDialog
+
+        root = Path(self.data_root.get() or C.DEFAULT_DATA_ROOT).expanduser().resolve()
+        selected = filedialog.askdirectory(parent=self, title='选择要重命名的文件夹',
+                                           initialdir=str(root) if root.is_dir() else None, mustexist=True)
+        if not selected:
+            return
+        source = Path(selected).absolute()
+        try:
+            resolved = source.resolve(strict=True)
+            allowed = (resolved != root and resolved.is_relative_to(root) and
+                       not source.is_symlink() and resolved.is_dir())
+        except OSError:
+            allowed = False
+        if not allowed:
+            messagebox.showwarning('请选择数据子文件夹', '可重命名当前数据目录下的普通子文件夹。', parent=self)
+            return
+        RenameFolderDialog(self, resolved)
 
     def choose_file(self, var, types):
         path = filedialog.askopenfilename(filetypes=types)
@@ -1260,6 +1281,9 @@ class CrossView(ttk.Frame, StatusMixin):
                    command=self.compute_report).pack(side='left', padx=6)
         ttk.Button(row, text='报告文件夹', command=self.open_report_folder).pack(side='left')
         self.report_include_runs = tk.BooleanVar(value=False)
+        self.report_filter_runs = tk.BooleanVar(value=True)
+        ttk.Checkbutton(side, text='一键报告仅纳入有 XDF 且 Trial 数 > 50 的 run',
+                        variable=self.report_filter_runs).pack(anchor='w', pady=(4, 0))
         ttk.Checkbutton(side, text='导出每个 run 的图（不勾选时仅导出 summary_all_runs）',
                         variable=self.report_include_runs).pack(anchor='w', pady=(4, 0))
         self.report_status = tk.StringVar()
@@ -1555,21 +1579,63 @@ class CrossView(ttk.Frame, StatusMixin):
         self.compute(list(self.tabs))
 
     def compute_report(self):
-        from ..reporting import report_plan
+        from ..reporting import DEFAULT_REPORT_TRIAL_THRESHOLD, filter_report_recordings, report_plan
+
+        if getattr(self, '_report_filter_pending', False):
+            return
+        recordings = self.selected_recordings()
+        include_runs = self.report_include_runs.get()
 
         def params_for(section):
             if section.mode == 'single':
                 return self.app.single_view._raw_params(section)
             return self._raw_params(self.tabs[section.id])
 
-        try:
-            jobs, report = report_plan(self.selected_recordings(), params_for,
-                                       include_run_exports=self.report_include_runs.get())
-        except ValueError as exc:
-            messagebox.showwarning('无法生成报告', str(exc))
+        def enqueue(selected, excluded=None):
+            try:
+                jobs, report = report_plan(selected, params_for, include_run_exports=include_runs)
+            except ValueError as exc:
+                messagebox.showwarning('无法生成报告', str(exc))
+                return
+            if excluded is not None:
+                report['run_filter'] = dict(trial_threshold_exclusive=DEFAULT_REPORT_TRIAL_THRESHOLD, excluded=excluded)
+            if self.app.run_jobs(jobs, self._report_event, report=report):
+                self.report_status.set(f'报告已排队 · {report["name"]}')
+
+        if not self.report_filter_runs.get() or not recordings:
+            enqueue(recordings)
             return
-        if self.app.run_jobs(jobs, self._report_event, report=report):
-            self.report_status.set(f'报告已排队 · {report["name"]}')
+
+        result = queue.Queue()
+        self._report_filter_pending = True
+        self.report_status.set('正在检查 XDF 和 Trial 数…')
+
+        def check():
+            try:
+                result.put(filter_report_recordings(recordings))
+            except Exception as exc:
+                result.put(exc)
+
+        def finish():
+            try:
+                outcome = result.get_nowait()
+            except queue.Empty:
+                self.after(100, finish)
+                return
+            self._report_filter_pending = False
+            self.report_status.set('')
+            if isinstance(outcome, Exception):
+                messagebox.showwarning('无法筛选报告记录', str(outcome))
+                return
+            selected, excluded = outcome
+            if not selected:
+                messagebox.showwarning('无法生成报告',
+                                       f'所选 run 中没有可用 XDF 且 Trial 数超过 {DEFAULT_REPORT_TRIAL_THRESHOLD} 的记录。')
+                return
+            enqueue(selected, excluded)
+
+        threading.Thread(target=check, daemon=True).start()
+        self.after(100, finish)
 
     def _report_event(self, event):
         kind = event['event']

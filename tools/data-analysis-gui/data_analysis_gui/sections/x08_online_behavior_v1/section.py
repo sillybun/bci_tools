@@ -15,6 +15,12 @@ class CrossOnlineBehavior(Section):
     description = '按任务比较在线行为，并按run汇总60秒有效时间滚动BPS的median/IQR和peak；窗口不跨session。'
     cache_code_dependencies = ('sections/s13_online_behavior_v1',)
 
+    def extra_signature_inputs(self, recordings, params):
+        from ...storage import optional_digest
+
+        return {str(path): optional_digest(path) for rec in recordings if rec.online and rec.task_mode == 'grid'
+                if (path := rolling_bps.grid_run_config_path(rolling_bps.run_key(rec)))}
+
     def run(self, ctx):
         sessions = sorted((s for s in ctx.sessions
                            if s.recording.online and s.task_mode in behavior.TASK_LABELS),

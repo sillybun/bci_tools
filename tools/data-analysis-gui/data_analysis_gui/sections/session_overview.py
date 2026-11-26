@@ -32,7 +32,7 @@ def session_overview(recordings, kind=None):
         styles['other'] = OTHER_SESSION_STYLE
     # A separate row reserves space for the legend even after font scaling.
     columns = (len(styles) + 1) // 2
-    fig = new_figure(max(14, 12 * columns, 4 + 1.12 * len(rows)), 11.2)
+    fig = new_figure(max(18, 4 + .49 * len(rows)), 8.5)
     fig._preserve_schematic_fonts = True
     legend_ax, ax = fig.subplots(2, 1, gridspec_kw={'height_ratios': [2.2, 6]})
     legend_ax.axis('off')
@@ -47,18 +47,18 @@ def session_overview(recordings, kind=None):
     for date, group in groupby(recordings, key=lambda r: r.date):
         end = start + sum(1 for _ in group)
         ax.text((start + end - 1) / 2, .48, (date if show_year else date[5:]) or 'Unknown date',
-                fontsize=30, ha='center', va='center')
+                fontsize=14, ha='center', va='center')
         if start:
             ax.axvline(start - .5, ymin=0, ymax=.65, color='#a0a0a0', linewidth=1.1, linestyle='--')
         start = end
     for index, r in enumerate(recordings):
         _, color, marker = recording_style(r)
-        ax.plot(index, .09, marker=marker, color=color, markersize=30, linestyle='none')
+        ax.plot(index, .09, marker=marker, color=color, markersize=10, linestyle='none')
     if not rows:
         message = 'Select recordings to build the session overview' if kind is None else 'No selected sessions of this type'
         ax.text(.5, .38, message,
                 ha='center', transform=ax.transAxes, fontsize=24)
-    recording_ticks(ax, range(len(rows)), labels, fontsize=22)
+    recording_ticks(ax, range(len(rows)), labels, fontsize=11)
     ax.set(xlim=(-.65, max(.65, len(rows) - .35)), ylim=(0, 1), yticks=[])
     ax.tick_params(axis='x', length=0)
     ax.spines[:].set_visible(False)

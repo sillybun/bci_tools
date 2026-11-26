@@ -5,6 +5,9 @@ import csv,json
 import numpy as np
 from . import storage
 from .core import behavior
+from .core.archive_logs import archived_logs
+from .core.catalog import RUN_PREFIX
+from .core.run_config import configured_run_name
 from .core.style import finish_figure
 from .sections.base import new_figure
 from .sections.s13_online_behavior_v1.section import behavior_figure
@@ -17,8 +20,8 @@ def bundle_files(folder,mode):
     if not trials.is_file():return {}
     files={'trials':trials}
     if mode=='centerout' and trials.with_name('block_metrics.csv').is_file():files['blocks']=trials.with_name('block_metrics.csv')
-    logs=sorted((folder/'logs').glob('grid-task*.log'))
-    if not logs:logs=[p for p in (folder/'logs/task.log',folder/'logs/cursor_tasks_app.log') if p.is_file()][:1]
+    logs=archived_logs(folder/'logs','grid-task*.log')
+    if not logs:logs=(archived_logs(folder/'logs','task.log') or archived_logs(folder/'logs','cursor_tasks_app.log'))[:1]
     files.update({f'log_{i}':p for i,p in enumerate(logs)})
     return files
 
@@ -87,7 +90,12 @@ def render_offline_behavior(work,folders,font_percent,send,*,online=False,includ
     for folder in map(Path,dict.fromkeys(folders)):
         mode,date,meta=folder_info(folder)
         if mode not in categories:continue
-        files=bundle_files(folder,mode);label=f'{date[4:6]}-{date[6:]} {folder.name}';out=work/categories[mode]/'runs'/f'{date}_{folder.name}'
+        files=bundle_files(folder,mode)
+        run_name=folder.name
+        if match := RUN_PREFIX.match(folder.name):
+            run_name=configured_run_name(folder,match['number'],match['task'],match['mode'],part=match['part'])
+        label=f'{date[4:6]}-{date[6:]} {run_name}'
+        out=work/categories[mode]/'runs'/f'{date}_{folder.name}'
         if include_runs:out.mkdir(parents=True,exist_ok=True)
         if not files:
             summaries.append(dict(folder=str(folder),date=date,status='no trials.csv'));continue
@@ -114,20 +122,20 @@ def render_offline_behavior(work,folders,font_percent,send,*,online=False,includ
                 exported.extend(str(p.relative_to(work)) for p in out.glob('*.png'))
         row=dict(folder=str(folder),date=date,task=mode,condition=meta.get('condition',label_control.lower()),trials=len(trials),status='ok',**{k:v for k,v in metric.items() if k!='bps'},**{k:v for k,v in daily.items() if k!='date'},rolling_windows=len(win))
         summaries.append(row);groups[mode].append(row);windows[mode].extend(win);trials_pool[str(folder)]=trials
-        run_entries[mode].append(dict(run_key=str(folder),date=date,session=f'{date[4:]} {folder.name.split("-")[0]}-{folder.name.split("-")[1]}'))
+        run_entries[mode].append(dict(run_key=str(folder),date=date,session=label))
         sources.append(dict(folder=str(folder),files={k:dict(path=str(p),sha256=storage.file_digest(p)) for k,p in files.items()}))
         send('message',message=f'{label_control} behavior: {date} {folder.name}, {len(trials)} trials, {len(win)} BPS windows')
     for mode in groups:
         out=work/categories[mode]/'summary_all_runs';out.mkdir(parents=True,exist_ok=True)
         rows=rolling_bps.run_summary(windows[mode],mode,runs=run_entries[mode],trials_by_run=trials_pool)
-        title,fig=rolling_bps.run_figure(rows,mode);fig._suptitle.set_text(f'{label_control} {"Grid" if mode=="grid" else "CO8"} | Run BPS and TTT');save(fig,out/'Run_BPS_TTT_summary')
+        title,fig=rolling_bps.run_figure(rows,mode,online=online);fig._suptitle.set_text(f'{label_control} {"Grid" if mode=="grid" else "CO8"} | Run BPS and TTT');save(fig,out/'Run_BPS_TTT_summary')
         write(out/'run_summary.csv',rows);write(out/'run_metrics.csv',groups[mode])
         ttt_sets=[('',rows)]
         if not online and any(r['date']=='20261116' for r in run_entries[mode]):
             entries=[r for r in run_entries[mode] if r['date']!='20261116']
             subset=[r for r in windows[mode] if r['date']!='20261116']
             filtered=rolling_bps.run_summary(subset,mode,runs=entries,trials_by_run=trials_pool)
-            title,fig=rolling_bps.run_figure(filtered,mode)
+            title,fig=rolling_bps.run_figure(filtered,mode,online=online)
             fig._suptitle.set_text(f'Offline {"Grid" if mode=="grid" else "CO8"} | Run BPS and TTT | excluding 1116')
             save(fig,out/'Run_BPS_TTT_summary_exclude1116');write(out/'Run_BPS_TTT_summary_exclude1116.csv',filtered)
             ttt_sets.append(('_exclude1116',filtered))

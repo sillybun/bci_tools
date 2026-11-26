@@ -353,7 +353,7 @@ class ChannelStability(Section):
             if layout_kind == 'physical' and map_layout is None:
                 result.notes.append('未加载可用的真实布局工作簿，布局图使用默认电极 ID 网格。')
             where = 'physical workbook layout (selected ChannelMap xlsx)' if map_layout is not None else \
-                '8-column × 128-row electrode-id grid (row positions 0–127)'
+                '8-column × 128-row electrode-id grid (row positions 1–128)'
             map_rows = []
             mv = self._map_values(mats, p['map_quantity'])
             for i in range(n):
@@ -396,7 +396,7 @@ class ChannelStability(Section):
         result.notes.append('方向调谐图使用筛选后的 trial，其余统计使用每份记录的全部接收帧。未传输电极记为缺失。'
                             '电极 ID 稳定只表示同一触点的信号统计相似，不证明是同一神经元。')
         from .chip_layout import append_chip_layout
-        append_chip_layout(result)
+        append_chip_layout(result, layout=ctx.layout)
         return result
 
     # ------------------------------------------------------------------ helpers
@@ -540,7 +540,8 @@ class ChannelStability(Section):
         return fig
 
     def overlap(self, jac, active_jac, shared, rate_r, labels, observed, common_text):
-        fig = new_figure(13, 9)
+        n = len(labels)
+        fig = new_figure(max(17, .78*n), max(12, .48*n))
         grid = fig.add_gridspec(2, 3, height_ratios=[1, 0.8])
         X.heatmap(fig.add_subplot(grid[0, 0]), jac, labels, cmap='Blues', vmin=0, vmax=1,
                   title='Jaccard of transmitted electrode sets', xlabel='', ylabel='')
@@ -549,7 +550,6 @@ class ChannelStability(Section):
         X.heatmap(fig.add_subplot(grid[0, 2]), rate_r, labels, cmap='viridis', vmin=0, vmax=1,
                   title='Pearson r of log(1+rate) on shared electrodes', xlabel='', ylabel='')
         ax = fig.add_subplot(grid[1, :2])
-        n = len(labels)
         ax.imshow(observed.astype(float), aspect='auto', cmap=ListedColormap([style.MISSING, '#2176ae']),
                   interpolation='nearest', vmin=0, vmax=1)
         X.recording_yticks(ax, labels)
@@ -562,7 +562,7 @@ class ChannelStability(Section):
 
     def distributions(self, mats, state, observed, labels, p):
         n = len(labels)
-        fig = new_figure(13, 7.5)
+        fig = new_figure(max(15,.47*n), max(10, 5 + .15*max(map(len, labels), default=0)))
         axes = fig.subplots(2, 2)
         x = np.arange(n)
         ax = axes[0, 0]
@@ -617,8 +617,8 @@ class ChannelStability(Section):
 
     def stability(self, state, observed, stable, unstable, n_obs, labels, p):
         n = len(labels)
-        fig = new_figure(13, 8)
-        grid = fig.add_gridspec(2, 3, width_ratios=[1, 1, 1.2])
+        fig = new_figure(19, max(10,.32*n))
+        grid = fig.add_gridspec(2, 3, width_ratios=[1, 1, 1.2], height_ratios=[1,3])
         ax = fig.add_subplot(grid[0, 0])
         counts = np.bincount(n_obs, minlength=n + 1)
         ax.bar(np.arange(n + 1), counts, color='#2176ae')
@@ -645,11 +645,11 @@ class ChannelStability(Section):
         ax.set_yticklabels(names)
         ax.invert_yaxis()
         ax.set_xlabel('electrodes transmitted in ≥ 2 recordings')
-        ax.set_title('Same state in every transmitted recording?')
+        ax.set_title('Electrode state consistency')
         # transitions between consecutive recordings
         ax = fig.add_subplot(grid[0, 2])
         trans = self._transitions(state, observed)
-        X.heatmap(ax, trans, list(STATES[1:]), fmt='{:.0f}', cmap='Blues', title='State transitions, consecutive recordings (pooled)',
+        X.heatmap(ax, trans, list(STATES[1:]), fmt='{:.0f}', cmap='Blues', title='State transitions between runs',
                   xlabel='state in later recording', ylabel='state in earlier recording', recording_columns=False)
         # unstable electrodes trajectory
         ax = fig.add_subplot(grid[1, :])
@@ -735,7 +735,7 @@ class ChannelStability(Section):
             ax = fig.add_subplot(grid[0, k])
             image = draw_channel_map(ax, ids, values[k], layout=layout, cmap=cmap, norm=norm,
                                      colorbar=False, show_labels=(k == 0))
-            ax.text(.5, -.015, X.recording_label_lines(labels[k]), transform=ax.transAxes, fontsize=7.5,
+            ax.text(.5, -.015, X.single_line_recording_label(labels[k]), transform=ax.transAxes, fontsize=7.5,
                     rotation=45, rotation_mode='anchor', ha='right', va='top', fontstyle='normal',
                     color=X.session_label_color(labels[k]))
             config = configs[k] if configs else {}

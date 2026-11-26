@@ -140,7 +140,7 @@ def test_single_day(section, synthetic, tmp_path):
         channels = np.arange(1024)
         ctx.layout = dict(source='synthetic-shank-table', rows=128, columns=8, kind='shank_table',
                           position=np.column_stack([channels % 128, channels // 128]))
-        ctx.params['depth_csv'] = str(write_depth_csv(tmp_path/'depth.csv'))
+        ctx.params['depth_csv'] = str(write_depth_csv(tmp_path/'depth.csv', ctx.layout))
     result = run_section(section, ctx)
     assert result.figures, 'a section must produce at least one figure'
     if section.id == 's04':

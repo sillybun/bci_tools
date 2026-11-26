@@ -1,6 +1,12 @@
 """Figure style shared by all sections (English figure text keeps fonts portable)."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+import re
+from tempfile import NamedTemporaryFile
+import warnings
+
 import matplotlib as mpl
 import numpy as np
 
@@ -11,6 +17,9 @@ MISSING = '#d6d4cf'
 DEFAULT_FONT_PERCENT = 100  # Legacy request field; exports use fixed point sizes.
 TITLE_PT, LABEL_PT, TICK_PT = 18, 14, 11
 FONT_POLICY = 'titles18-labels14-ticks11-v1'
+_MISSING_GLYPH = r'Glyph .* missing from (?:the )?(?:current )?font'
+_CJK = re.compile(r'[㐀-鿿豈-﫿]')
+_RUN_ID = re.compile(r'\brun[- ]?\d+', re.IGNORECASE)
 MAX_CODE_COLORS = ('#111111', '#FFD91A', '#FF9400', '#EF2727')   # max code 0..3
 MODEL_COLORS = {'gt': '#2b2b2b', 'ridge': '#2176ae', 'kf': '#e07b39', 'online': '#009e73'}
 # Polar subplot placement for eight directions in a 3x3 grid (centre empty).
@@ -18,13 +27,18 @@ DIRECTION_GRID = {0: (1, 2), 1: (0, 2), 2: (0, 1), 3: (0, 0), 4: (1, 0), 5: (2, 
 
 
 def apply():
+    from matplotlib.font_manager import fontManager
+
+    installed = {font.name for font in fontManager.ttflist}
+    families = ['Arial', 'Microsoft YaHei', 'Noto Sans CJK SC', 'PingFang SC',
+                'SimHei', 'WenQuanYi Zen Hei', 'DejaVu Sans']
     mpl.rcParams.update({
         'font.size': 11, 'axes.titlesize': TITLE_PT, 'axes.labelsize': LABEL_PT,
         'xtick.labelsize': TICK_PT, 'ytick.labelsize': TICK_PT,
         'legend.fontsize': TICK_PT, 'figure.titlesize': TITLE_PT,
         'axes.spines.top': False, 'axes.spines.right': False,
         'figure.facecolor': 'white', 'savefig.facecolor': 'white', 'pdf.fonttype': 42, 'svg.fonttype': 'none',
-        'font.family': ['Arial', 'Microsoft YaHei', 'DejaVu Sans'],
+        'font.family': [name for name in families if name in installed],
     })
 
 
@@ -36,15 +50,22 @@ def finish_figure(figure, font_percent=DEFAULT_FONT_PERCENT):
     """
     from matplotlib.text import Text
 
+    text_artists = figure.findobj(Text)
+    for text in text_artists:
+        label = text.get_text()
+        if _RUN_ID.search(label):
+            text.set_text(' '.join(line.strip() for line in label.splitlines()))
+            text.set_wrap(False)
+
     if getattr(figure, '_preserve_schematic_fonts', False):
         if not getattr(figure, '_schematic_legacy_finished', False):
-            for text in figure.findobj(Text):
+            for text in text_artists:
                 text.set_fontfamily(mpl.rcParams['font.family'])
                 text.set_fontsize((text.get_fontsize()+1)*1.2)
             figure._schematic_legacy_finished = True
         return
 
-    for text in figure.findobj(Text):
+    for text in text_artists:
         text.set_fontfamily(mpl.rcParams['font.family'])
     for ax in figure.axes:
         for annotation in ax.texts:
@@ -86,6 +107,12 @@ def _fit_figure_text(figure):
         if text is not title and text.get_position()[1] > .15:
             continue
         original = text.get_text()
+        if _RUN_ID.search(original):
+            extent = measure.get_text_width_height_descent(original, text.get_fontproperties(), False)[0]
+            if extent > width:
+                figure.set_figwidth(max(figure.get_figwidth(), extent / (72 * .94)))
+                width = figure.get_figwidth()*72*.94
+            continue
         if '$' in original:
             continue
         lines = []
@@ -116,9 +143,38 @@ def _install_export_style():
         return
     original = Figure.savefig
 
-    def savefig(figure, *args, **kwargs):
-        finish_figure(figure)
-        return original(figure, *args, **kwargs)
+    def savefig(figure, fname, *args, **kwargs):
+        from matplotlib.text import Text
+
+        path = Path(fname) if isinstance(fname, (str, os.PathLike)) else None
+        format_name = (kwargs.get('format') or (path.suffix[1:] if path else '')
+                       or mpl.rcParams['savefig.format']).lower()
+        portable_svg = format_name == 'svg' and any(
+            _CJK.search(text.get_text()) for text in figure.findobj(Text))
+        settings = {'svg.fonttype': 'path'} if portable_svg else {}
+
+        def render(target):
+            with mpl.rc_context(settings), warnings.catch_warnings():
+                warnings.filterwarnings('error', _MISSING_GLYPH, category=UserWarning)
+                try:
+                    finish_figure(figure)
+                    return original(figure, target, *args, **kwargs)
+                except UserWarning as exc:
+                    if re.match(_MISSING_GLYPH, str(exc)):
+                        raise RuntimeError(f'图表缺字，导出失败 ({fname})。请安装支持该字符的字体：{exc}') from exc
+                    raise
+
+        # Keep the previous file intact when a renderer writes before reporting a missing glyph.
+        if path is None or path.suffix.lower() not in ('.png', '.pdf', '.svg'):
+            return render(fname)
+        with NamedTemporaryFile(dir=path.parent, prefix='.figure-', suffix=path.suffix, delete=False) as file:
+            staged = Path(file.name)
+        try:
+            result = render(staged)
+            os.replace(staged, path)
+            return result
+        finally:
+            staged.unlink(missing_ok=True)
 
     savefig._fixed_font_policy = True
     Figure.savefig = savefig

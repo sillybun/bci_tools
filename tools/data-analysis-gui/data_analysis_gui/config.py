@@ -11,10 +11,11 @@ PREFERENCES_PATH = LOCAL_DIR / 'preferences.json'
 EXPORT_DIR = LOCAL_DIR / 'exports'
 
 # Overridable via preferences or the environment; never required to exist.
-DEFAULT_DATA_ROOT = Path(os.environ.get('DAGUI_DATA_ROOT', 'E:/AitBCI/data/keaiduo'))
+LOCAL_DATA_ROOT = Path('D:/AitBCI/keaiduo')
+DEFAULT_DATA_ROOT = Path(os.environ.get('DAGUI_DATA_ROOT') or (LOCAL_DATA_ROOT if LOCAL_DATA_ROOT.is_dir() else 'E:/AitBCI/data/keaiduo'))
 BASE_LAYOUT_XLSX = DEFAULT_DATA_ROOT / 'channel_layout' / '天枢3.0_ChannelMap.xlsx'
 _DATED_LAYOUTS = sorted(BASE_LAYOUT_XLSX.parent.glob('天枢3.0_ChannelMap[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].xlsx'))
-DEFAULT_LAYOUT_XLSX = (_DATED_LAYOUTS[-1] if _DATED_LAYOUTS else BASE_LAYOUT_XLSX)
+DEFAULT_LAYOUT_XLSX = DEFAULT_DATA_ROOT / 'channel_layout' / 'TS3.0_ChannelMap_Final.xlsx'
 LEGACY_DEPTH_CSV = DEFAULT_DATA_ROOT / 'channel_layout' / '20260917_kad_channel_depth_TS-3.0.csv'
 DEFAULT_DEPTH_CSV = DEFAULT_DATA_ROOT / 'channel_layout' / '20260917_kad_channel_depth_TS-3.0_corrected.csv'
 LEGACY_LAYOUT_XLSX = DEFAULT_DATA_ROOT / 'channel_layout' / 'TS-3.0 ChannelMap-4code.xlsx'
@@ -61,13 +62,14 @@ def load_preferences() -> dict:
         values = json.loads(PREFERENCES_PATH.read_text(encoding='utf-8'))
         # Upgrade the previous built-in default; retain explicit custom layouts.
         saved = values.get('layout_path', '')
-        if saved and Path(saved).resolve() in (LEGACY_LAYOUT_XLSX.resolve(), BASE_LAYOUT_XLSX.resolve()):
+        if not saved or Path(saved).name.startswith('天枢3.0_ChannelMap') or Path(saved).name == LEGACY_LAYOUT_XLSX.name:
+            values['use_layout'] = True
             values['layout_path'] = str(DEFAULT_LAYOUT_XLSX)
         def upgrade_depth(node):
             if not isinstance(node, dict):
                 return
-            if node.get('depth_csv') and Path(node['depth_csv']).resolve() == LEGACY_DEPTH_CSV.resolve():
-                node['depth_csv'] = str(DEFAULT_DEPTH_CSV)
+            if node.get('depth_csv') and Path(node['depth_csv']).name in (LEGACY_DEPTH_CSV.name, DEFAULT_DEPTH_CSV.name):
+                node['depth_csv'] = ''
             for child in node.values():
                 upgrade_depth(child)
         upgrade_depth(values)

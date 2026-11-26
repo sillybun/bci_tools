@@ -16,10 +16,9 @@ def build_context(sessions: list[Session], criteria: TrialFilter, params: dict |
                   section: Section | None = None, layout_path=None, channel_config_path=None,
                   cache=None, progress=None, cancelled=None, artifacts=None) -> AnalysisContext:
     values = section.resolve_params(params) if section else {}
-    try:
-        layout = read_layout(layout_path)
-    except Exception:
-        layout = None
+    layout = read_layout(layout_path)
+    if layout_path and layout is None:
+        raise ValueError(f'找不到通道映射表：{layout_path}')
     cache = {} if cache is None else cache
     cohorts = []
     for session in sessions:
@@ -89,6 +88,10 @@ def run_section(section: Section, ctx: AnalysisContext, *, font_percent=DEFAULT_
         for entries in (result.figures, result.methods, result.figure_data):
             entries.insert(0, entries.pop())
     for _, figure in result.figures:
+        if section.mode == 'single' and ctx.sessions:
+            run_label = ctx.session.recording.run_name
+            if run_label and not any(run_label in label.get_text() for label in figure.texts):
+                figure.text(0.99, 0.005, run_label, ha='right', va='bottom', fontsize=8)
         finish_figure(figure, font_percent)
     from .sections.result_summaries import result_sentence
     result.summary['one_sentence_summary'] = result_sentence(section.id, result.summary)

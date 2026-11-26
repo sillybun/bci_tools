@@ -24,6 +24,9 @@ METHOD = ('Online sessions only. Task outcomes are independent of the neural tri
           'cannot be verified.')
 
 
+from .archive_logs import archived_logs
+
+
 def source_files(recording):
     """Find a behavior bundle assigned to exactly one nearby XDF."""
     folder = recording.path.parent
@@ -49,13 +52,14 @@ def source_files(recording):
         if blocks.is_file():
             files['blocks'] = blocks
     else:
-        logs = sorted((root / 'logs').glob('grid-task*.log'))
+        logs = archived_logs(root / 'logs', 'grid-task*.log')
         if logs:
             files.update({f'log_{i}': path for i, path in enumerate(logs)})
-        elif (root / 'logs' / 'cursor_tasks_app.log').is_file():
-            files['log_0'] = root / 'logs' / 'cursor_tasks_app.log'
-        elif (root / 'logs' / 'task.log').is_file():
-            files['log_0'] = root / 'logs' / 'task.log'
+        else:
+            fallback = (archived_logs(root / 'logs', 'cursor_tasks_app.log') or
+                        archived_logs(root / 'logs', 'task.log'))
+            if fallback:
+                files['log_0'] = fallback[0]
     return files
 
 

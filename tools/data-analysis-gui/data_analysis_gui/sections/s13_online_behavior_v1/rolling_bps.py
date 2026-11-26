@@ -1,11 +1,15 @@
 """Sixty-second active-time throughput and per-run distributions of those windows."""
 from collections import defaultdict
 import math
+from itertools import groupby
+import json
+from pathlib import Path
 
 import numpy as np
 
 from ...core import behavior
-from ...core.catalog import run_folder
+from ...core.catalog import RUN_PREFIX, run_folder
+from ...core.run_config import naming_config
 from ...core.crossday import recording_ticks
 from ..base import new_figure
 from . import co8_bps
@@ -193,11 +197,89 @@ def rolling_figure(rows, mode, title):
     return fig
 
 
-def grid_run_figure(rows):
-    """A4 landscape: independent BPS/TTT panels with one shared run axis."""
+def grid_run_config_path(run_key):
+    if not run_key:
+        return None
+    folder = Path(run_key)
+    if folder.is_file():
+        folder = run_folder(folder) or folder.parent
+    return next((p for p in (folder/'config/task_config.json', folder/'task_config.json') if p.is_file()), None)
+
+
+def _grid_config_cells(row):
+    folder = Path(row.get('run_key') or '')
+    match = RUN_PREFIX.match(folder.name)
+    run = str(int(match['number'])) + (match['part'] or '') if match else row['run']
+    path = grid_run_config_path(row.get('run_key') or '')
+    try:
+        config = json.loads(path.read_text(encoding='utf-8-sig')) if path else {}
+    except (OSError, ValueError):
+        config = {}
+    fields = naming_config(config)
+
+    def multiplier(value, base):
+        return f'×{value/base:.3g}' if isinstance(value, (int, float)) and math.isfinite(value) else '—'
+
+    def switch(value):
+        return 'On' if value is True else 'Off' if value is False else '—'
+
+    next_target = fields['preview_next_target']
+    nearby = fields['nearby_assist']
+    if str(row['date']).replace('-', '') == '20261111':
+        # Confirmed settings for the November 11 archive before these flags were saved.
+        next_target = False if next_target is None else next_target
+        nearby = False if nearby is None else nearby
+    radius = fields['nearby_radius']
+    assist = fields['bci_target_assist_speed']
+    return (
+        run, multiplier(fields['joystick_gain'], .012), multiplier(fields['bci_velocity_scale'], 1.),
+        switch(next_target),
+        f'{2*radius+1}×{2*radius+1}' if nearby is True and radius in (1, 2, 3) else switch(nearby),
+        f'{assist:g}' if fields['bci_target_assist_enabled'] is True and isinstance(assist, (int, float))
+        else switch(fields['bci_target_assist_enabled']),
+    )
+
+
+def _grid_date_label(date):
+    value = str(date).replace('-', '')
+    return f'{value[4:6]}.{value[6:8]}' if len(value) == 8 and value.isdigit() else str(date)
+
+
+def _grid_run_table(ax, ttt_ax, table, rows, show_assist):
+    fields = ['Date', 'Run #', 'Cursor Speed', 'BC Speed', 'Next Target', 'Nearby Target']
+    if show_assist:
+        fields.append('Assist Speed')
+    table.set_yticks(range(len(fields)), fields)
+    table.set_ylim(len(fields)-.5, -.5)
+    table.tick_params(axis='both', length=0)
+    table.spines[:].set_visible(False)
+    table.tick_params(axis='x', labelbottom=False)
+    for y in range(len(fields)+1):
+        table.axhline(y-.5, color='#dbe3eb', lw=.7)
+    phase_starts = []
+    for date, group in groupby(enumerate(rows), key=lambda item: item[1]['date']):
+        indices = [i for i, _ in group]
+        left, right = indices[0]-.5, indices[-1]+.5
+        center = (left+right)/2
+        shade = '#eaf1f7' if len(phase_starts) % 2 == 0 else '#f4f7fa'
+        table.axvspan(left, right, color=shade, zorder=0, ec='none')
+        table.text(center, 0, _grid_date_label(date), ha='center', va='center', fontsize=10, fontweight='bold')
+        phase_starts.append(left)
+    for i, row in enumerate(rows):
+        for y, value in enumerate(_grid_config_cells(row)[:len(fields)-1], 1):
+            table.text(i, y, value, ha='center', va='center', fontsize=9,
+                       fontweight='bold' if y == 1 else 'normal')
+    for boundary in phase_starts[1:]:
+        for item in (ax, ttt_ax, table):
+            item.axvline(boundary, color='#a6b6c4', linestyle='--', lw=.85, zorder=1)
+
+
+def grid_run_figure(rows, *, online=True, show_assist=None):
+    """BPS and TTT panels with a shared date and run-configuration axis."""
     title = 'Online Grid Run Rolling BPS Summary'
-    fig = new_figure(297 / 25.4, 210 / 25.4)
-    axes = fig.subplots(2, 1, sharex=True)
+    fig = new_figure(max(12, 1.6 + .48*len(rows)), 8.4)
+    bps_ax, ttt_ax, table_ax = fig.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [3.4, 3.4, 1.55]})
+    axes = (bps_ax, ttt_ax)
     x = np.arange(len(rows))
     for ax, is_time in zip(axes, (False, True)):
         color = '#c25e00' if is_time else '#286e9e'
@@ -234,17 +316,17 @@ def grid_run_figure(rows):
         ax.set_ylim(bottom=0)
         ax.grid(axis='y', alpha=.23)
         ax.legend(loc='upper right', frameon=False, fontsize=6.5, ncol=2)
-    recording_ticks(axes[-1], x, [r['run'] for r in rows], fontsize=6.5 if len(rows)>10 else 7)
-    axes[0].tick_params(axis='x', labelbottom=False)
-    axes[-1].set_xlabel('Run')
-    fig.suptitle('Online Grid · BPS and Time to Target by Run', fontsize=11)
-    fig.supxlabel('BPS: 60s window / 1s step; partial windows ratio-normalized · TTT: successful trials · Green reference: mean TTT = log₂(N)/6 at 100% success', fontsize=7)
+    bps_ax.set_xlim(-.5, len(rows)-.5)
+    for ax in axes:
+        ax.tick_params(axis='x', bottom=False, labelbottom=False)
+    _grid_run_table(bps_ax, ttt_ax, table_ax, rows, online if show_assist is None else show_assist)
+    fig.suptitle(f'{"Online" if online else "Offline"} Grid · BPS and Time to Target by Run')
     return title, fig
 
 
-def run_figure(rows, mode, *, peak=False):
+def run_figure(rows, mode, *, peak=False, online=True):
     if mode == 'grid':
-        return grid_run_figure(rows)
+        return grid_run_figure(rows, online=online)
     task = behavior.TASK_LABELS[mode]
     combined = mode == 'grid'
     title = f'Online {task} Run Rolling BPS ' + ('Summary' if combined else 'Peak' if peak else 'Median and IQR')

@@ -1,0 +1,28 @@
+name: Insta360 Link 2 Control checks
+on:
+  push:
+    paths:
+      - 'tools/insta360-link2-control/**'
+      - '.github/workflows/insta360-link2-control.yml'
+  pull_request:
+    paths:
+      - 'tools/insta360-link2-control/**'
+      - '.github/workflows/insta360-link2-control.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: tools/insta360-link2-control
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      - name: Compile Windows camera bridge
+        shell: powershell
+        run: Add-Type -Path Ptz.cs

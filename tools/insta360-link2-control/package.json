@@ -1,0 +1,10 @@
+{
+  "name": "insta360-link2-control",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check app.js && node --check link2.js && node --test tests/api.test.js"
+  }
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Link 2 · Studio Control</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">L2</span><div><strong>STUDIO CONTROL</strong><small>Insta360 4K Link2 · 云台版</small></div></div>
+      <div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionText" role="status">未连接</span><button id="connectBtn" type="button" class="button button-ghost">连接设备</button></div>
+    </header>
+    <section class="workspace">
+      <section class="preview-panel">
+        <div class="panel-head"><div><span class="eyebrow">LIVE FEED</span><h1>画面回流</h1></div><span id="streamBadge" class="badge">等待视频源</span></div>
+        <div class="video-wrap"><video id="preview" autoplay playsinline muted></video><div id="videoEmpty" class="video-empty"><div class="camera-icon">◉</div><p id="connectionMessage" role="status">点击“连接设备”打开 Link 2</p></div><div class="video-overlay"><span id="resolution">-- × --</span><span id="fps">-- FPS</span></div></div>
+        <div class="feed-meta"><div><span>输入</span><strong id="sourceName">未选择</strong></div><div><span>格式</span><strong id="formatName">UVC / 自动</strong></div><div><span>延迟</span><strong id="latency">-- ms</strong></div></div>
+      </section>
+      <aside class="control-panel">
+        <section class="control-section"><div class="section-title"><span>录制</span><span id="recordState" class="state-label">待机</span></div><button id="recordBtn" class="record-button" disabled><span class="record-dot"></span><span id="recordLabel">开始录制</span><kbd>R</kbd></button></section>
+        <section class="control-section joystick-section"><div class="section-title"><span>云台方向</span><span class="state-label">摇杆</span></div><div id="joystick" class="joystick" aria-label="云台方向摇杆"><div class="joystick-ring"><div id="stick" class="stick"><span></span></div></div><div class="axis axis-x">PAN <b id="panValue">0°</b></div><div class="axis axis-y">TILT <b id="tiltValue">0°</b></div></div><div class="joystick-hint">拖动摇杆调整镜头方向 · 松开回中</div></section>
+        <section class="control-section device-info"><div class="section-title"><span>设备诊断</span><button id="refreshBtn" class="icon-button" title="重新探测">↻</button></div><div class="info-row"><span>USB 视频</span><span id="uvcState" class="info-value">未探测</span></div><div class="info-row"><span>控制接口</span><span id="controlState" class="info-value">未探测</span></div><p id="notice" class="notice">连接设备后显示能力检测结果</p></section>
+      </aside>
+    </section>
+    <footer><span>USB-C · UVC 4K / 30fps</span><span>本地控制台 · 不上传视频</span></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+name = "Insta360 Link 2 Control"
+description = "预览、录制 Link 2 视频，并控制云台和变焦。"
+category = "采集与连接"
+tags = ["摄像头", "PTZ", "USB", "Windows"]
+command = ["node", "server.js", "--open"]
+readme = "README.md"

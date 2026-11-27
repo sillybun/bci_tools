@@ -11,6 +11,7 @@
 | Integrated Term（集成终端控制台） | 集中启动、停止和分组管理采集、解码、设备桥接及可视化进程，查看终端输出 | [使用说明](tools/integrated-term/README.md) |
 | Mock EMG Data（模拟肌电源） | 鼠标拖动小球，生成 64 通道模拟肌电并通过 LSL 发送 | [使用说明](tools/mock-emg-data/README.md) |
 | EMG 信号调试 | 实时查看 EMG 波形、双极差分与在线带通，诊断 LSL 分包接收状态 | [使用说明](tools/emg-signal-monitor/README.md) |
+| Insta360 Link 2 Control | 在 Windows 预览和录制 USB 摄像头画面，控制云台和变焦 | [使用说明](tools/insta360-link2-control/README.md) |
 
 ## 打开工具箱
 

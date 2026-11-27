@@ -1,0 +1,7 @@
+node_modules/
+*.exe
+*.pcap
+*.pcapng
+*.webm
+*.mp4
+*.log
